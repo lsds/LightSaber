@@ -1,0 +1,6 @@
+include_directories(applications)
+include_directories(queries)
+include_directories(queues)
+
+add_subdirectory(applications)
+add_subdirectory(microbenchmarks)
