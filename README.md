@@ -2,7 +2,7 @@
 <img src="https://github.com/lsds/LightSaber/blob/master/docs/images/logo.png" height="70%" width="70%"></img>
 </div>
 
-# LightSaber [![License](https://img.shields.io/github/license/lsds/LightSaber.svg?branch=master)](https://github.com/lsds/LightSaber/blob/master/LICENCE.md) [![Release](https://img.shields.io/github/v/release/lsds/LightSaber.svg?branch=master)](https://github.com/lsds/LightSaber/releases)
+# LightSaber [![License](https://img.shields.io/github/license/lsds/LightSaber.svg?branch=master)](https://github.com/lsds/LightSaber/blob/master/LICENCE.md) [![Release](https://img.shields.io/github/release/lsds/LightSaber.svg)](https://github.com/lsds/LightSaber/releases)
 
 LightSaber is a stream processing engine that balances parallelism and incremental processing when
 executing window aggregation queries on multi-core CPUs. LightSaber operates on in-order 
