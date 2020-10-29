@@ -187,6 +187,20 @@ class NUMACircularQueryBuffer : public QueryBuffer {
     return *m_buffers[bufferIdx].get();
   }
 
+  char *getBufferRaw(long index) {
+    index = normaliseNotPowerOfTwo(index);
+    int bufferIdx = getBufferIndex(index);
+    return getBufferRaw(bufferIdx);
+  }
+
+  char *getBufferRaw(int bufferIdx) {
+    return m_buffers[bufferIdx].get()->data();
+  }
+
+  char *getBufferRaw() override {
+    return m_buffers[0].get()->data();
+  }
+
   long getLong(size_t index) override {
     index = normaliseNotPowerOfTwo(index);
     int bufferIdx = getBufferIndex(index);

@@ -5,6 +5,16 @@
 
 class WindowBatch;
 
+enum TaskType : uint8_t { PROCESS, MERGE};
+
+static inline const std::string taskTypeToString(TaskType v) {
+  switch (v) {
+    case PROCESS: return "PROCESS";
+    case MERGE: return "MERGE";
+    default:throw std::runtime_error("error: unknown aggregation type");
+  }
+}
+
 /*
  * \brief This class represent a task in LightSaber and has a pointer to @WindowBatch of data.
  *
@@ -18,11 +28,12 @@ class Task {
   int m_taskId;
   int m_queryId;
   int m_numaNodeId;
+  TaskType m_type;
 
  public:
   Task();
-  Task(int taskId, std::shared_ptr<WindowBatch> batch);
-  void set(int taskId, std::shared_ptr<WindowBatch> batch);
+  Task(int taskId, std::shared_ptr<WindowBatch> batch, TaskType type = TaskType::PROCESS);
+  void set(int taskId, std::shared_ptr<WindowBatch> batch, TaskType type = TaskType::PROCESS);
   int run(int pid);
   void outputWindowBatchResult(std::shared_ptr<WindowBatch> result);
   int getTaskId();

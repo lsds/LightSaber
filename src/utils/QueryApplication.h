@@ -26,6 +26,7 @@ class QueryApplication {
    * be dispatched to the most upstream queries
    */
   int m_numberOfUpstreamQueries;
+  size_t m_taskQueueCapacity;
   std::shared_ptr<TaskQueue> m_queue;
   std::shared_ptr<TaskProcessorPool> m_workerPool;
   std::vector<std::shared_ptr<TaskDispatcher>> m_dispatchers;
@@ -40,6 +41,7 @@ class QueryApplication {
   void setup();
   std::shared_ptr<TaskQueue> getTaskQueue();
   int getTaskQueueSize();
+  size_t getTaskQueueCapacity();
   std::vector<std::shared_ptr<Query>> getQueries();
   std::shared_ptr<TaskProcessorPool> getTaskProcessorPool();
   int numberOfQueries();

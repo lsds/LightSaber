@@ -46,9 +46,9 @@ class BenchmarkQuery {
       } else if (strcmp(argv[i], "--query") == 0) {
         SystemConf::getInstance().QUERY_NUM = std::stoi(argv[j]);
       } else if (strcmp(argv[i], "--circular-size") == 0) {
-        SystemConf::getInstance().CIRCULAR_BUFFER_SIZE = std::stoi(argv[j]);
+        SystemConf::getInstance().CIRCULAR_BUFFER_SIZE = std::stoul(argv[j]);
       } else if (strcmp(argv[i], "--unbounded-size") == 0) {
-        SystemConf::getInstance().UNBOUNDED_BUFFER_SIZE = std::stoi(argv[j]);
+        SystemConf::getInstance().UNBOUNDED_BUFFER_SIZE = std::stoul(argv[j]);
       } else if (strcmp(argv[i], "--hashtable-size") == 0) {
         SystemConf::getInstance().HASH_TABLE_SIZE = std::stoi(argv[j]);
       } else if (strcmp(argv[i], "--slots") == 0) {

@@ -9,8 +9,12 @@
 QueryApplication::QueryApplication(std::vector<std::shared_ptr<Query>> &queries)
     : m_numOfThreads(SystemConf::getInstance().WORKER_THREADS),
       m_queries(queries), m_numOfQueries((int) queries.size()), m_numberOfUpstreamQueries(0),
-      m_queue(std::make_shared<TaskQueue>(2 * queries.size() * (SystemConf::getInstance().CIRCULAR_BUFFER_SIZE
-          / SystemConf::getInstance().BATCH_SIZE))),
+      m_taskQueueCapacity(2 * queries.size() *
+          (SystemConf::getInstance().CIRCULAR_BUFFER_SIZE /
+              SystemConf::getInstance().BATCH_SIZE)),
+      m_queue(std::make_shared<TaskQueue>(m_taskQueueCapacity)),
+      //m_queue(std::make_shared<TaskQueue>(2 * queries.size() * (SystemConf::getInstance().CIRCULAR_BUFFER_SIZE
+      //    / SystemConf::getInstance().BATCH_SIZE))),
       m_workerPool(std::make_shared<TaskProcessorPool>(m_numOfThreads, m_queue)) {}
 
 void QueryApplication::processData(std::vector<char> &values, long latencyMark) {
@@ -45,6 +49,8 @@ std::shared_ptr<TaskQueue> QueryApplication::getTaskQueue() {
 int QueryApplication::getTaskQueueSize() {
   return (int) m_queue->size_approx();
 }
+
+size_t QueryApplication::getTaskQueueCapacity() { return m_taskQueueCapacity; }
 
 std::vector<std::shared_ptr<Query>> QueryApplication::getQueries() {
   return m_queries;

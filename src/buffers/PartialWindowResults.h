@@ -66,6 +66,13 @@ class PartialWindowResults {
       throw std::runtime_error("error: getting a byte buffer from partial window buffer of this type is not implemented");
   }
 
+  char *getBufferRaw() {
+    if (m_type == 0)
+      return m_buffer.data();
+    else
+      throw std::runtime_error("error: getting a byte buffer from partial window buffer of this type is not implemented");
+  }
+
   ByteBufferPtr &getBufferPtrs() {
     if (m_type == 1)
       return m_bufferPtrs;

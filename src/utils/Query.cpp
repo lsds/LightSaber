@@ -120,6 +120,7 @@ QueryApplication *Query::getParent() {
 void Query::setParent(QueryApplication *parent) {
   m_parent = parent;
   m_taskQueue = parent->getTaskQueue();
+  m_taskQueueCapacity = parent->getTaskQueueCapacity();
   m_dispatcher->setTaskQueue(m_taskQueue);
 }
 
@@ -133,6 +134,10 @@ std::shared_ptr<TaskDispatcher> Query::getTaskDispatcher() {
 
 std::shared_ptr<TaskQueue> Query::getTaskQueue() {
   return m_taskQueue;
+}
+
+size_t Query::getTaskQueueCapacity() {
+  return m_taskQueueCapacity;
 }
 
 std::shared_ptr<ResultHandler> Query::getResultHandler() {

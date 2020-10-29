@@ -22,7 +22,7 @@ class NoOp : public OperatorCode {
     s.append("NoOp (").append(")");
     return s;
   }
-  void processData(std::shared_ptr<WindowBatch> batch, Task &task, int pid) override {
+  void processData(const std::shared_ptr<WindowBatch> &batch, Task &task, int pid) override {
 
     //batch->initPartialCountBasedWindowPointers();
 

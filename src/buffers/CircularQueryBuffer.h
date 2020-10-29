@@ -104,6 +104,8 @@ class CircularQueryBuffer : public QueryBuffer {
     return m_buffer;
   }
 
+  char *getBufferRaw() override { return m_buffer.data(); }
+
   size_t getBufferCapacity(int id) override {
     (void) id;
     return m_capacity;

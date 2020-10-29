@@ -21,7 +21,7 @@ class Aggregation : public OperatorCode, public AggregateOperatorCode {
   std::vector<ColumnReference *> m_aggregationAttributes;
   ColumnReference m_timestampReference;
   std::vector<Expression *> m_groupByAttributes;
-  int m_keyLength, m_valueLength;
+  int m_keyLength, m_valueLength, m_bucketSize;
   bool m_groupBy;
   bool m_processIncremental;
   bool m_invertible;
@@ -102,6 +102,10 @@ class Aggregation : public OperatorCode, public AggregateOperatorCode {
     if (m_processIncremental) {
       std::cout << "[DBG] operator contains incremental aggregation type" << std::endl;
     }
+
+    m_bucketSize = (m_groupBy) ? (8 + 8 + m_keyLength + m_valueLength + 4) :
+                   (8 + m_valueLength + 4);
+    m_bucketSize = (m_bucketSize % 16 != 0) ? (((int)m_bucketSize/16) + 1) * 16 : m_bucketSize;
   }
   bool hasIncremental() override { return m_processIncremental; }
   bool hasInvertible() override { return m_invertible; }
@@ -134,7 +138,7 @@ class Aggregation : public OperatorCode, public AggregateOperatorCode {
     s.append("(incremental ?").append(" ").append(std::to_string(m_processIncremental)).append(")");
     return s;
   }
-  void processData(std::shared_ptr<WindowBatch> batch, Task &task, int pid) override {
+  void processData(const std::shared_ptr<WindowBatch>& batch, Task &task, int pid) override {
     (void) batch;
     (void) task;
     (void) pid;
@@ -184,4 +188,5 @@ class Aggregation : public OperatorCode, public AggregateOperatorCode {
   int getKeyLength() override { return m_keyLength; }
   int getValueLength() override { return m_valueLength; }
   int numberOfValues() override { return (int) m_aggregationAttributes.size(); }
+  int getBucketSize() override { return m_bucketSize; }
 };

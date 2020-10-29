@@ -46,9 +46,11 @@ class ResultHandler {
   bool m_hasWindowFragments;
   bool m_useParallelMerge;
   std::mutex m_forwardLock; /* Protects nextToForward */
-  int m_nextToForward;
+  std::atomic<int> m_nextToForward;
+  std::atomic<int> m_nextWindowToForward;
   std::mutex m_mergeLock;   /* Protects nextToAggregate */
-  int m_nextToAggregate;
+  std::mutex m_prepareMergeLock;   /* Protects merge preparation */
+  std::atomic<int> m_nextToAggregate;
   AggregateOperatorCode *m_aggrOperator;
   long m_totalOutputBytes;
   int m_numberOfSlots = SystemConf::getInstance().SLOTS;
@@ -58,6 +60,7 @@ class ResultHandler {
   std::mutex m_assignLock; /* Protects nextToForward */
   tbb::concurrent_queue<int> m_availableSlots;
   std::atomic<int> m_reservedSlots;
+  std::vector<PartialResultSlot*> m_slotsToRelease;
   int m_currentWindowSlot;
   int m_nextToAggregateWindows;
   int m_nextToForwardPtrs;
@@ -90,8 +93,8 @@ class ResultHandler {
   ResultHandler(Query &query, QueryBuffer &freeBuffer, bool hasWindowFragments, bool useParallelMerge = false);
   long getTotalOutputBytes();
   void incTotalOutputBytes(int bytes);
-  virtual void forwardAndFree(WindowBatch *batch);
-  virtual void setAggregateOperator(AggregateOperatorCode *aggrOperator);
+  void forwardAndFree(WindowBatch *batch);
+  void setAggregateOperator(AggregateOperatorCode *aggrOperator);
   bool containsFragmentedWindows();
   virtual ~ResultHandler();
 };

@@ -47,7 +47,7 @@ class StaticHashJoin : public OperatorCode {
     s.append(")");
     return s;
   }
-  void processData(std::shared_ptr<WindowBatch> batch, Task &task, int pid) override {
+  void processData(const std::shared_ptr<WindowBatch> &batch, Task &task, int pid) override {
     (void) batch;
     (void) task;
     (void) pid;

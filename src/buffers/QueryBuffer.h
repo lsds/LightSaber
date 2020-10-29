@@ -118,6 +118,8 @@ class QueryBuffer {
     return m_isNuma;
   }
 
+  virtual char *getBufferRaw() = 0;
+
   virtual ~QueryBuffer() = default;
 
  private:

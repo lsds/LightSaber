@@ -36,10 +36,10 @@ class TaskDispatcher {
   int m_tupleSize;
 
   /* Task Identifier */
-  int m_nextTask;
+  std::atomic<int> m_nextTask;
 
   /* Pointers */
-  long m_f;
+  long m_f = 0;
   long m_mask;
   long m_latencyMark;
   long m_accumulated = 0;
@@ -50,8 +50,12 @@ class TaskDispatcher {
   long m_step = -1;
 
   int m_replayBarrier = 0;
+
+  const bool m_debug = false;
+
  public:
-  TaskDispatcher(Query &query, QueryBuffer &buffer, bool replayTimestamps = false);
+  TaskDispatcher(Query &query, QueryBuffer &buffer,
+                 bool replayTimestamps = false);
   void dispatch(char *data, int length, long latencyMark = -1);
   bool tryDispatch(char *data, int length, long latencyMark = -1);
   QueryBuffer *getBuffer();
@@ -64,6 +68,7 @@ class TaskDispatcher {
   void newTaskFor(long p, long q, long free, long b_, long _d);
   int getTaskNumber();
   long getTimestamp(int index);
+  void tryCreateNonProcessingTasks();
   long getSystemTimestamp(int index);
   void setTimestamp(int index, long timestamp);
 };

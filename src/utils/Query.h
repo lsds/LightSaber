@@ -32,6 +32,7 @@ class Query {
   TupleSchema *m_schema;
   TupleSchema *m_outputSchema;
   std::shared_ptr<QueryBuffer> m_circularBuffer;
+  size_t m_taskQueueCapacity;
   std::shared_ptr<TaskQueue> m_taskQueue;
   std::shared_ptr<TaskDispatcher> m_dispatcher;
   std::shared_ptr<ResultHandler> m_resultHandler;
@@ -74,6 +75,7 @@ class Query {
   QueryBuffer *getBuffer();
   std::shared_ptr<TaskDispatcher> getTaskDispatcher();
   std::shared_ptr<TaskQueue> getTaskQueue();
+  size_t getTaskQueueCapacity();
   std::shared_ptr<ResultHandler> getResultHandler();
   void setAggregateOperator(AggregateOperatorCode *aggrOperator);
   long getBytesGenerated();

@@ -84,6 +84,22 @@ void WindowBatch::setQuery(Query *query) {
   m_query = query;
 }
 
+int WindowBatch::getPid() {
+  return m_pid;
+}
+
+void WindowBatch::setPid(int pid) {
+  m_pid = pid;
+}
+
+TaskType WindowBatch::getTaskType() {
+  return m_type;
+}
+
+void WindowBatch::setTaskType(TaskType taskType) {
+  m_type = taskType;
+}
+
 QueryBuffer *WindowBatch::getInputQueryBuffer() {
   return m_inputBuffer;
 }
@@ -95,6 +111,17 @@ ByteBuffer &WindowBatch::getBuffer() {
   return m_inputBuffer->getBuffer();
 #endif
 }
+
+char *WindowBatch::getBufferRaw() {
+#if defined(HAVE_NUMA)
+  NUMACircularQueryBuffer *b = dynamic_cast<NUMACircularQueryBuffer *>(m_inputBuffer);
+  assert(b != nullptr && "error: invalid buffer pointer");
+  return b->getBufferRaw(m_numaNodeId);
+#else
+  return m_inputBuffer->getBufferRaw();
+#endif
+}
+
 void WindowBatch::setOutputBuffer(std::shared_ptr<PartialWindowResults> buffer) {
   m_outputBuffer = buffer;
 }

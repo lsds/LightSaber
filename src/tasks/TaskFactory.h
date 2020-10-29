@@ -29,14 +29,14 @@ class TaskFactory {
   TaskFactory(TaskFactory const &) = delete;
   void operator=(TaskFactory const &) = delete;
 
-  std::shared_ptr<Task> newInstance(int taskId, std::shared_ptr<WindowBatch> batch) {
+  std::shared_ptr<Task> newInstance(int taskId, std::shared_ptr<WindowBatch> batch, TaskType type = TaskType::PROCESS) {
     std::shared_ptr<Task> task;
     bool hasRemaining = m_pool.try_pop(task);
     if (!hasRemaining) {
       m_count.fetch_add(1);
-      task = std::make_shared<Task>(taskId, batch);
+      task = std::make_shared<Task>(taskId, batch, type);
     }
-    task->set(taskId, batch);
+    task->set(taskId, batch, type);
     return task;
   }
 

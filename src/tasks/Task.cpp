@@ -8,14 +8,15 @@
 
 Task::Task() : m_batch(nullptr), m_taskId(-1) {}
 
-Task::Task(int taskId, std::shared_ptr<WindowBatch> batch) :
-    m_batch(batch), m_taskId(taskId), m_queryId(batch->getQuery()->getId()) {}
+Task::Task(int taskId, std::shared_ptr<WindowBatch> batch, TaskType type) :
+    m_batch(batch), m_taskId(taskId), m_queryId(batch->getQuery()->getId()), m_type(type) {}
 
-void Task::set(int taskId, std::shared_ptr<WindowBatch> batch) {
+void Task::set(int taskId, std::shared_ptr<WindowBatch> batch, TaskType type) {
   m_taskId = taskId;
   m_batch = batch;
   m_queryId = batch->getQuery()->getId();
   m_numaNodeId = batch->getNumaNodeId();
+  m_type = type;
 }
 
 int Task::run(int pid) {
@@ -25,7 +26,15 @@ int Task::run(int pid) {
   if (next->getDownstream() != nullptr)
     throw std::runtime_error("error: execution of chained query operators is not yet tested");
 
-  next->getCode().processData(m_batch, *this, pid);
+  m_batch->setPid(pid);
+
+  if (m_type == TaskType::PROCESS) {
+    // update here timestamps in the case that data is replayed from memory
+    if (m_batch->hasTimestampOffset())
+      m_batch->updateTimestamps();
+
+    next->getCode().processData(m_batch, *this, pid);
+  }
 
   if (m_batch == nullptr)
     return 0;

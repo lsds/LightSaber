@@ -51,5 +51,6 @@ class AggregateOperatorCode {
   virtual int getKeyLength() = 0;
   virtual int getValueLength() = 0;
   virtual int numberOfValues() = 0;
+  virtual int getBucketSize() = 0;
   long getHashTableSizeAfterCodeGeneration() { return m_hashTableSize; }
 };

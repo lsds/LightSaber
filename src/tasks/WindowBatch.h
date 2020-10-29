@@ -1,8 +1,8 @@
 #pragma once
 
-#include <vector>
-#include <memory>
 #include <climits>
+#include <memory>
+#include <vector>
 
 #include "buffers/QueryBuffer.h"
 
@@ -10,6 +10,7 @@ class PartialWindowResults;
 class WindowDefinition;
 class TupleSchema;
 class Query;
+enum TaskType : uint8_t;
 
 /*
  * \brief This class holds the input/output buffers with the respective start/end pointer
@@ -23,6 +24,7 @@ class WindowBatch {
  private:
   size_t m_batchSize;
   int m_taskId;
+  int m_pid;
   int m_numaNodeId;
   int m_freePointer;
   Query *m_query;
@@ -30,7 +32,8 @@ class WindowBatch {
   /* buffer holding the results when no window semantics are required */
   std::shared_ptr<PartialWindowResults> m_outputBuffer;
   /* buffers holding the results of window fragments */
-  std::shared_ptr<PartialWindowResults> m_openingWindows, m_closingWindows, m_pendingWindows, m_completeWindows;
+  std::shared_ptr<PartialWindowResults> m_openingWindows, m_closingWindows,
+      m_pendingWindows, m_completeWindows;
   WindowDefinition *m_windowDefinition;
   TupleSchema *m_schema;
 
@@ -55,21 +58,29 @@ class WindowBatch {
   bool m_replayTimestamps = false;
   long m_offset = 0;
 
+  TaskType m_type;
+
  public:
   WindowBatch(size_t batchSize = 0, int taskId = 0, int freePointer = INT_MIN,
               Query *query = nullptr, QueryBuffer *buffer = nullptr,
-              WindowDefinition *windowDefinition = nullptr, TupleSchema *schema = nullptr, long mark = 0);
-  void set(size_t batchSize, int taskId, int freePointer,
-           Query *query, QueryBuffer *buffer,
-           WindowDefinition *windowDefinition, TupleSchema *schema, long mark);
+              WindowDefinition *windowDefinition = nullptr,
+              TupleSchema *schema = nullptr, long mark = 0);
+  void set(size_t batchSize, int taskId, int freePointer, Query *query,
+           QueryBuffer *buffer, WindowDefinition *windowDefinition,
+           TupleSchema *schema, long mark);
   int getBatchSize();
   int getTaskId();
   void setTaskId(int taskId);
   int getNumaNodeId();
   Query *getQuery();
   void setQuery(Query *query);
+  int getPid();
+  void setPid(int pid);
+  TaskType getTaskType();
+  void setTaskType(TaskType taskType);
   QueryBuffer *getInputQueryBuffer();
   ByteBuffer &getBuffer();
+  char *getBufferRaw();
   void setOutputBuffer(std::shared_ptr<PartialWindowResults> buffer);
   std::shared_ptr<PartialWindowResults> getOutputBuffer();
   std::shared_ptr<PartialWindowResults> getOpeningWindows();

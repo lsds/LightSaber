@@ -15,7 +15,7 @@ class TestAggregation : public RandomDataGenerator {
     SystemConf::getInstance().SLOTS = 256;
     SystemConf::getInstance().PARTIAL_WINDOWS = 64; // change this depending on the batch size
 
-    // Configure non-grouped aggregation. Check the application benchmarks for grouped aggreagations.
+    // Configure non-grouped aggregation. Check the application benchmarks for grouped aggregations.
     std::vector<AggregationType> aggregationTypes(1);
     aggregationTypes[0] = AggregationTypes::fromString("sum");
 
@@ -24,7 +24,7 @@ class TestAggregation : public RandomDataGenerator {
 
     std::vector<Expression *> groupByAttributes(0);
 
-    auto window = new WindowDefinition(ROW_BASED, 1000, 1000);
+    auto window = new WindowDefinition(RANGE_BASED, 50000, 10000);
     Aggregation *aggregation = new Aggregation(*window, aggregationTypes, aggregationAttributes, groupByAttributes);
 
     // Set up code-generated operator
@@ -44,8 +44,15 @@ class TestAggregation : public RandomDataGenerator {
 
     long timestampReference = std::chrono::system_clock::now().time_since_epoch().count();
 
+    bool replayTimestamps = false;
+    bool copyDataOnInsert = true;
+    if (window->isRangeBased()) {
+      replayTimestamps = true;
+      copyDataOnInsert = false;
+    }
+
     std::vector<std::shared_ptr<Query>> queries(1);
-    queries[0] = std::make_shared<Query>(0, operators, *window, m_schema, timestampReference, true, false, true);
+    queries[0] = std::make_shared<Query>(0, operators, *window, m_schema, timestampReference, true, replayTimestamps, copyDataOnInsert);
 
     m_application = new QueryApplication(queries);
     m_application->setup();
