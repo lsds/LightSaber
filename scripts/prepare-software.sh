@@ -34,7 +34,7 @@ cd build
 cmake -G "Unix Makefiles" ..
 make
 sudo make install
-echo "export PATH=/usr/lib/ccache:$PATH" >> $HOME/.profile
+echo 'export PATH=/usr/lib/ccache:$PATH' >> $HOME/.profile
 sudo ln -s /usr/local/bin/doxygen /usr/bin/doxygen
 cd
 
@@ -67,9 +67,9 @@ cmake -DLLVM_ENABLE_PROJECTS=clang -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_TARGETS_TO_BUILD=X86 -G "Unix Makefiles" ../llvm
 make
 sudo make install
-echo "export LLVM_HOME=$(pwd)" >> $HOME/.profile
-echo "export PATH=$LLVM_HOME/bin:$PATH" >> $HOME/.profile
-echo "export LIBRARY_PATH=$LLVM_HOME/lib:$LIBRARY_PATH" >> $HOME/.profile
+echo 'export LLVM_HOME=$(pwd)' >> $HOME/.profile
+echo 'export PATH=$LLVM_HOME/bin:$PATH' >> $HOME/.profile
+echo 'export LIBRARY_PATH=$LLVM_HOME/lib:$LIBRARY_PATH' >> $HOME/.profile
 sudo rm /etc/ld.so.cache
 sudo ldconfig
 cd
