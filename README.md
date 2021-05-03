@@ -2,15 +2,16 @@
 <img src="https://github.com/lsds/LightSaber/blob/master/docs/images/logo.png" height="70%" width="70%"></img>
 </div>
 
-# LightSaber [![License](https://img.shields.io/github/license/lsds/LightSaber.svg?branch=master)](https://github.com/lsds/LightSaber/blob/master/LICENCE.md) 
+# LightSaber [![License](https://img.shields.io/github/license/lsds/LightSaber.svg?branch=master)](https://github.com/lsds/LightSaber/blob/master/LICENCE.md)
 
 LightSaber is a stream processing engine that balances parallelism and incremental processing when
-executing window aggregation queries on multi-core CPUs. LightSaber operates on in-order 
+executing window aggregation queries on multi-core CPUs. LightSaber operates on in-order
 streams of data and achieves up to an order of magnitude higher throughput compared to existing systems.
 
 ### Getting started
 
 The `prepare-software.sh` script will guide you through the installation and compilation process of our system locally.
+The script is tested on **Ubuntu 18.04.5 LTS**.
 
 ```
 $ git clone https://github.com/lsds/LightSaber.git
@@ -72,7 +73,7 @@ Variables in **SystemConf.h** configure the LightSaber runtime. Each of them als
 
 ###### --threads _N_
 
-Sets the number of CPU worker threads (`WORKER_THREADS` variable). The default value is `1`. **CPU worker threads are pinned to physical cores**. The threads are pinned to core ids based on the underlying hardware (e.g., if there are multiple sockets with n cores each, the first n threads are pinned in the first socket and so on). 
+Sets the number of CPU worker threads (`WORKER_THREADS` variable). The default value is `1`. **CPU worker threads are pinned to physical cores**. The threads are pinned to core ids based on the underlying hardware (e.g., if there are multiple sockets with n cores each, the first n threads are pinned in the first socket and so on).
 
 ###### --slots _N_
 
@@ -93,10 +94,6 @@ Sets the intermediate result buffer size in bytes (`UNBOUNDED_BUFFER_SIZE` varia
 ###### --hashtable-size _N_
 
 Hash table size (in number of buckets): hash tables hold partial window aggregate results (`HASH_TABLE_SIZE` variable with the default value 512).
-
-###### --throughput-monitor-interval _N_
-
-Sets the query throughput matrix update interval, in msec (`THROUGHPUT_MONITOR_INTERVAL` variable). The default value is `1000` i.e. 1 sec.
 
 ###### --performance-monitor-interval _N_
 

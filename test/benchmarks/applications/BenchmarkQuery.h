@@ -58,6 +58,8 @@ class BenchmarkQuery {
       } else if (strcmp(argv[i], "--parallel-merge") == 0) {
         SystemConf::getInstance().PARALLEL_MERGE_ON = (strcasecmp(argv[j], "true") == 0 ||
             std::atoi(argv[j]) != 0);
+      } else if (strcmp(argv[i], "--performance-monitor-interval") == 0) {
+        SystemConf::getInstance().PERFORMANCE_MONITOR_INTERVAL = std::stoul(argv[j]);
       } else if (strcmp(argv[i], "--latency") == 0) {
         SystemConf::getInstance().LATENCY_ON = (strcasecmp(argv[j], "true") == 0 ||
             std::atoi(argv[j]) != 0);
