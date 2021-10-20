@@ -58,13 +58,36 @@ class LinearRoadBenchmark : public BenchmarkQuery {
     m_data = new std::vector<char>(len);
     auto buf = (InputSchema *) m_data->data();
 
-    std::string filePath = Utils::GetHomeDir() + "/LightSaber/resources/datasets/lrb/";
+    std::string filePath = Utils::getHomeDir() + "/LightSaber/resources/datasets/lrb/";
     std::ifstream file(filePath + m_fileName);
+    if (!file.good())
+      throw std::runtime_error("error: input file does not exist, check the path.");
     std::string line;
     unsigned long idx = 0;
     while (std::getline(file, line) && idx < len / sizeof(InputSchema)) {
       InputSchema::parse(buf[idx], line);
+      if (m_startTimestamp == 0) {
+        m_startTimestamp = buf[0].timestamp;
+      }
+      m_endTimestamp = buf[idx].timestamp;
       idx++;
+    }
+
+    if (idx < len / sizeof(InputSchema)) {
+      unsigned long iter = 0;
+      auto barrier = idx-1;
+      long lastTime = buf[idx-1].timestamp;
+      while (idx < len / sizeof(InputSchema)) {
+        std::memcpy(&buf[idx], &buf[iter], sizeof(InputSchema));
+        buf[idx].timestamp += lastTime;
+        m_endTimestamp = buf[idx].timestamp;
+        idx++;
+        iter++;
+        if (iter == barrier) {
+          iter = 0;
+          lastTime = buf[idx-1].timestamp;
+        }
+      }
     }
 
     if (m_debug) {

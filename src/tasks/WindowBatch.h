@@ -1,8 +1,8 @@
 #pragma once
 
-#include <climits>
-#include <memory>
 #include <vector>
+#include <memory>
+#include <climits>
 
 #include "buffers/QueryBuffer.h"
 
@@ -10,6 +10,7 @@ class PartialWindowResults;
 class WindowDefinition;
 class TupleSchema;
 class Query;
+struct LineageGraph;
 enum TaskType : uint8_t;
 
 /*
@@ -26,14 +27,14 @@ class WindowBatch {
   int m_taskId;
   int m_pid;
   int m_numaNodeId;
-  int m_freePointer;
+  long m_freePointer1, m_freePointer2;
+  long m_prevFreePointer1, m_prevFreePointer2;
   Query *m_query;
   QueryBuffer *m_inputBuffer;
   /* buffer holding the results when no window semantics are required */
   std::shared_ptr<PartialWindowResults> m_outputBuffer;
   /* buffers holding the results of window fragments */
-  std::shared_ptr<PartialWindowResults> m_openingWindows, m_closingWindows,
-      m_pendingWindows, m_completeWindows;
+  std::shared_ptr<PartialWindowResults> m_openingWindows, m_closingWindows, m_pendingWindows, m_completeWindows;
   WindowDefinition *m_windowDefinition;
   TupleSchema *m_schema;
 
@@ -60,14 +61,22 @@ class WindowBatch {
 
   TaskType m_type;
 
+  std::shared_ptr<LineageGraph> m_graph;
+
+  // variables added for watermarks
+  long m_watermark = LONG_MIN;
+  char * m_partialBuffer;
+
  public:
-  WindowBatch(size_t batchSize = 0, int taskId = 0, int freePointer = INT_MIN,
+  WindowBatch(size_t batchSize = 0, int taskId = 0,
+              long freePointer1 = INT_MIN, long freePointer2 = INT_MIN,
               Query *query = nullptr, QueryBuffer *buffer = nullptr,
-              WindowDefinition *windowDefinition = nullptr,
-              TupleSchema *schema = nullptr, long mark = 0);
-  void set(size_t batchSize, int taskId, int freePointer, Query *query,
-           QueryBuffer *buffer, WindowDefinition *windowDefinition,
-           TupleSchema *schema, long mark);
+              WindowDefinition *windowDefinition = nullptr, TupleSchema *schema = nullptr, long mark = 0,
+              long prevFreePointer1 = -1, long prevFreePointer2 = -1);
+  void set(size_t batchSize, int taskId, long freePointer1,
+           long freePointer2, Query *query, QueryBuffer *buffer,
+           WindowDefinition *windowDefinition, TupleSchema *schema, long mark,
+           long prevFreePointer1 = -1, long prevFreePointer2 = -1);
   int getBatchSize();
   int getTaskId();
   void setTaskId(int taskId);
@@ -94,10 +103,15 @@ class WindowBatch {
   TupleSchema *getSchema();
   void setSchema(TupleSchema *schema);
   WindowDefinition *getWindowDefinition();
-  int getFreePointer();
-  int getBufferStartPointer();
-  int getBufferEndPointer();
-  void setBufferPointers(int startP, int endP);
+  void setLineageGraph(std::shared_ptr<LineageGraph> &graph);
+  std::shared_ptr<LineageGraph> &getLineageGraph();
+  long getFreePointer();
+  long getSecondFreePointer();
+  long getPrevFreePointer();
+  long getPrevSecondFreePointer();
+  long getBufferStartPointer();
+  long getBufferEndPointer();
+  void setBufferPointers(long startP, long endP);
   long getStreamStartPointer();
   long getStreamEndPointer();
   void setStreamPointers(long startP, long endP);
@@ -116,14 +130,21 @@ class WindowBatch {
   int getLastWindowIndex();
   void clear();
   void resetWindowPointers();
-  int normalise(int pointer);
-  long getTimestamp(int index);
+  long normalise(long pointer);
+  long getTimestamp(long index);
   void setPrevTimestamps(long startTime, long endTime);
   long getPrevStartTimestamp();
   long getPrevEndTimestamp();
   void setEmptyWindowIds(long emptyStartWindow, long emptyEndWindow);
   long getEmptyStartWindowId();
   long getEmptyEndWindowId();
+
+  // functions for watermarks
+  void setWatermark (long watermark);
+  long getWatermark ();
+  void setPartialBuffer (char *partial);
+  char *getPartialBuffer ();
+
   void initPartialWindowPointers();
   void initPartialRangeBasedWindowPointers();
   void initPartialCountBasedWindowPointers();

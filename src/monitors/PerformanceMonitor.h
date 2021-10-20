@@ -22,6 +22,7 @@ class PerformanceMonitor {
   QueryApplication &m_application;
   int m_size;
   std::vector<Measurement *> m_measurements;
+  std::chrono::high_resolution_clock::time_point m_t1;
 
  public:
   PerformanceMonitor(QueryApplication &application);

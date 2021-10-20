@@ -1,13 +1,13 @@
-#include "cql/operators/AggregationType.h"
-#include "cql/expressions/ColumnReference.h"
-#include "utils/WindowDefinition.h"
-#include "cql/operators/Aggregation.h"
-#include "cql/operators/codeGeneration/OperatorKernel.h"
-#include "utils/QueryOperator.h"
-#include "utils/Query.h"
-#include "cql/predicates/ComparisonPredicate.h"
-#include "cql/expressions/IntConstant.h"
 #include "benchmarks/applications/YahooBenchmark/YahooBenchmark.h"
+#include "cql/expressions/ColumnReference.h"
+#include "cql/expressions/IntConstant.h"
+#include "cql/operators/Aggregation.h"
+#include "cql/operators/AggregationType.h"
+#include "cql/operators/codeGeneration/OperatorKernel.h"
+#include "cql/predicates/ComparisonPredicate.h"
+#include "utils/Query.h"
+#include "utils/QueryOperator.h"
+#include "utils/WindowDefinition.h"
 
 class YSB : public YahooBenchmark {
  private:
@@ -193,6 +193,7 @@ class YSB : public YahooBenchmark {
 
     bool replayTimestamps = window->isRangeBased();
 
+    OperatorCode *cpuCode;
     // Set up code-generated operator
     OperatorKernel *genCode = new OperatorKernel(true, true, useParallelMerge, true);
     genCode->setInputSchema(getSchema());
@@ -202,7 +203,7 @@ class YSB : public YahooBenchmark {
     genCode->setAggregation(aggregation);
     genCode->setQueryId(0);
     genCode->setup();
-    OperatorCode *cpuCode = genCode;
+    cpuCode = genCode;
 
     // Print operator
     std::cout << cpuCode->toSExpr() << std::endl;
@@ -230,11 +231,12 @@ class YSB : public YahooBenchmark {
   }
 
  public:
-  YSB(bool inMemory = true) {
+  YSB(bool inMemory = true, bool startApp = true) {
     m_name = "YSB";
     createSchema();
     if (inMemory)
       loadInMemoryData();
-    createApplication();
+    if (startApp)
+      createApplication();
   }
 };

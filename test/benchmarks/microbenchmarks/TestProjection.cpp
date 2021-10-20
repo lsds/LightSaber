@@ -57,11 +57,11 @@ class TestProjection : public RandomDataGenerator {
 };
 
 int main(int argc, const char **argv) {
-  BenchmarkQuery *benchmarkQuery = nullptr;
+  std::unique_ptr<BenchmarkQuery> benchmarkQuery {};
 
   BenchmarkQuery::parseCommandLineArguments(argc, argv);
 
-  benchmarkQuery = new TestProjection();
+  benchmarkQuery = std::make_unique<TestProjection>();
 
   return benchmarkQuery->runBenchmark();
 }

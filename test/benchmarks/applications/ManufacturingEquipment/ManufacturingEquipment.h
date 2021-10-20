@@ -71,6 +71,7 @@ class ManufacturingEquipment : public BenchmarkQuery {
   TupleSchema *m_schema = nullptr;
   QueryApplication *m_application = nullptr;
   std::vector<char> *m_data = nullptr;
+  std::vector<char> *m_secData = nullptr;
   bool m_debug = false;
 
   QueryApplication *getApplication() override {
@@ -82,7 +83,9 @@ class ManufacturingEquipment : public BenchmarkQuery {
   void loadInMemoryData() {
     size_t len = SystemConf::getInstance().BUNDLE_SIZE;
     m_data = new std::vector<char>(len);
+    m_secData = new std::vector<char>(len);
     auto buf = (InputSchema *) m_data->data();
+    auto secBuf = (InputSchema *) m_secData->data();
 
     const std::string cell = "2012-02-22T16:46:28.9670320+00:00";
     const std::locale
@@ -93,13 +96,57 @@ class ManufacturingEquipment : public BenchmarkQuery {
     is >> myEpoch;
     //std::cout << myEpoch << std::endl;
 
-    std::string filePath = Utils::GetHomeDir() + "/LightSaber/resources/datasets/manufacturing_equipment/";
+    std::string filePath = Utils::getHomeDir() + "/LightSaber/resources/datasets/manufacturing_equipment/";
     std::ifstream file(filePath + "DEBS2012-small.txt");
+    if (!file.good())
+      throw std::runtime_error("error: input file does not exist, check the path.");
     std::string line;
     unsigned long idx = 0;
     while (std::getline(file, line) && idx < len / sizeof(InputSchema)) {
       InputSchema::parse(buf[idx], line, myEpoch);
+      if (m_startTimestamp == 0) {
+        m_startTimestamp = buf[0].timestamp;
+      }
+      m_endTimestamp = buf[idx].timestamp;
       idx++;
+    }
+
+    if (SystemConf::getInstance().ADAPTIVE_CHANGE_DATA) {
+      for (unsigned long i = 0; i < idx; ++i) {
+        // if (i%10==0) {
+        auto mf01 = buf[i].mf01 % 16;
+        auto mf02 = buf[i].mf02 % 16;
+        auto mf03 = buf[i].mf03 % 16;
+        auto ii = 0;
+        for (; ii < 14 && i < idx; ++i) {
+          secBuf[i].timestamp = buf[i].timestamp;
+          secBuf[i].mf01 = mf01;
+          secBuf[i].mf02 = mf02;
+          secBuf[i].mf03 = mf03;
+          ii++;
+        }
+        i = i - 1;
+        //}
+      }
+
+      for (unsigned long i = 0; i < idx; ++i) {
+        // if (i%14==0) {
+        // auto mf01 = buf[i].mf01 %16;
+        // auto mf02 = buf[i].mf02 %16;
+        // auto mf03 = buf[i].mf03 %16;
+        auto mf01 = buf[i].mf01 % 4095;
+        auto mf02 = buf[i].mf02 % 4095;
+        auto mf03 = buf[i].mf03 % 4095;
+        auto ii = 0;
+        for (; ii < 14 && i < m_data->size() / sizeof(InputSchema); ++i) {
+          buf[i].mf01 = mf01;
+          buf[i].mf02 = mf02;
+          buf[i].mf03 = mf03;
+          ii++;
+        }
+        i = i - 1;
+        //}
+      }
     }
 
     if (m_debug) {
@@ -120,6 +167,10 @@ class ManufacturingEquipment : public BenchmarkQuery {
 
   std::vector<char> *getInMemoryData() override {
     return m_data;
+  }
+
+  std::vector<char> *getSecondInMemoryData() override {
+    return m_secData;
   }
 
   std::vector<char> *getStaticData() override {

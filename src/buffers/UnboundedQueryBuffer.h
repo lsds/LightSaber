@@ -53,4 +53,12 @@ class UnboundedQueryBuffer {
     auto p = (long *) m_buffer.data();
     p[index] = value;
   }
+
+  void putBytes(char *value, size_t length) {
+    if (m_position + length > m_capacity) {
+      throw std::runtime_error("error: increase the size of the UnboundedQueryBuffer");
+    }
+    std::memcpy(m_buffer.data() + m_position, value, length);
+    m_position += length;
+  }
 };

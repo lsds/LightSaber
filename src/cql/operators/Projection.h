@@ -47,8 +47,15 @@ class Projection : public OperatorCode {
     s.append(")");
     return s;
   }
-  void processData(const std::shared_ptr<WindowBatch> &batch, Task &task, int pid) override {
+  void processData(const std::shared_ptr<WindowBatch>& batch, Task &task, int pid) override {
     (void) batch;
+    (void) task;
+    (void) pid;
+    throw std::runtime_error("error: this operator cannot be used directly");
+  }
+  void processData(const std::shared_ptr<WindowBatch>& lBatch, const std::shared_ptr<WindowBatch>& rBatch, Task &task, int pid) override {
+    (void) lBatch;
+    (void) rBatch;
     (void) task;
     (void) pid;
     throw std::runtime_error("error: this operator cannot be used directly");

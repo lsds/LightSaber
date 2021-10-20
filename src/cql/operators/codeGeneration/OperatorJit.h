@@ -19,6 +19,8 @@
 #define STRINGIFY_DETAIL(X) #X
 #define STRINGIFY(X) STRINGIFY_DETAIL(X)
 
+static bool useOptimizationPasses = true;
+
 // Show the error message and exit.
 LLVM_ATTRIBUTE_NORETURN static void fatalError(llvm::Error E) {
   llvm::handleAllErrors(std::move(E), [&](const llvm::ErrorInfoBase &EI) {
@@ -44,12 +46,17 @@ class OperatorJit {
   using OptimizeFunction = std::function<std::unique_ptr<Module>(std::unique_ptr<Module>)>;
   LegacyIRTransformLayer<decltype(CompileLayer), OptimizeFunction> OptimizeLayer;
   std::vector<VModuleKey> keys;
+  object::OwningBinary<object::ObjectFile> objectFile;
  public:
+  std::string llPath, oPath;
+
   OperatorJit();
 
   const TargetMachine &getTargetMachine() const;
 
   VModuleKey addModule(std::unique_ptr<Module> M);
+
+  VModuleKey addObjectFile(object::OwningBinary<object::ObjectFile> O);
 
   JITSymbol findSymbol(const StringRef &Name);
 
@@ -101,18 +108,24 @@ class OperatorJit {
 
  private:
   std::unique_ptr<Module> optimizeModule(std::unique_ptr<Module> M);
+
+  void llvm_module_to_file(const llvm::Module& module, const char* filename);
 };
 } // end namespace orc
 } // end namespace llvm
 
 class CodeGenWrapper {
  private:
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic error;
   llvm::orc::OperatorJit *J;
+
+  const bool useObjectFile = false;
 
  public:
   CodeGenWrapper();
 
-  uint64_t parseAndCodeGen(int argc, const char **argv);
+  uint64_t parseAndCodeGen(int argc, const char **argv, bool fileExists = false);
 
   template<class Signature_t>
   llvm::Expected<std::function<Signature_t>> getFunction(const clang::StringRef &Name) {

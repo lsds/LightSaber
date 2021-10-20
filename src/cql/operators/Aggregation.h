@@ -144,6 +144,13 @@ class Aggregation : public OperatorCode, public AggregateOperatorCode {
     (void) pid;
     throw std::runtime_error("error: this operator cannot be used directly");
   }
+  void processData(const std::shared_ptr<WindowBatch>& lBatch, const std::shared_ptr<WindowBatch>& rBatch, Task &task, int pid) override {
+    (void) lBatch;
+    (void) rBatch;
+    (void) task;
+    (void) pid;
+    throw std::runtime_error("error: this operator cannot be used directly");
+  }
   void aggregatePartials(std::shared_ptr<PartialWindowResults> openingWindows,
                          std::shared_ptr<PartialWindowResults> closingOrPendingWindows,
                          std::shared_ptr<PartialWindowResults> completeWindows,

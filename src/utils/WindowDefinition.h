@@ -41,7 +41,7 @@ class WindowDefinition {
   }
 
  public:
-  WindowDefinition(WindowMeasure measure, long size, long slide)
+  WindowDefinition(WindowMeasure measure = WindowMeasure::ROW_BASED, long size = 1, long slide = 1)
       : m_size(size), m_slide(slide), m_gap(0), m_windowMeasure(measure) {
     m_paneSize = gcd(m_size, m_slide);
     if (slide < size)

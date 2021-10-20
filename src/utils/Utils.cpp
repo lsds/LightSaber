@@ -1,16 +1,21 @@
+#include "Utils.h"
+
 #include <pthread.h>
-#include <iostream>
-#include <unistd.h>
-#include <sys/types.h>
 #include <pwd.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include <boost/fiber/numa/pin_thread.hpp>
 #include <boost/fiber/numa/topology.hpp>
+#include <experimental/filesystem>
+#include <iostream>
 
-#include "Utils.h"
-#include "SystemConf.h"
-
-void Utils::bindProcess(const int core_id) {
+void Utils::bindProcess(int core_id) {
+  if (core_id >= (int) std::thread::hardware_concurrency()) {
+    std::cout << "warning: the core id exceeds the number of cores" << std::endl;
+    core_id = core_id % (int) std::thread::hardware_concurrency();
+  }
+  //core_id = core_id + 1;
   pthread_t pid = pthread_self();
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
@@ -24,7 +29,11 @@ void Utils::bindProcess(const int core_id) {
     fprintf(stderr, "Failed to set thread %lu to affinity to CPU %d\n", pid, core_id);
 }
 
-void Utils::bindProcess(std::thread &thread, const int id) {
+void Utils::bindProcess(std::thread &thread, int id) {
+  if (id >= (int) std::thread::hardware_concurrency()) {
+    std::cout << "warning: the core id exceeds the number of cores" << std::endl;
+    id = id % (int) std::thread::hardware_concurrency();
+  }
   auto pid = thread.native_handle();
   /* Pin worker to thread */
   /*int min = 1; // +1 dispatcher
@@ -32,7 +41,7 @@ void Utils::bindProcess(std::thread &thread, const int id) {
   int total = max - min + 1;
 
   int core_id = ((id - (min - 1)) % total) + min;*/
-  int core_id = id;
+  int core_id = id; // + 1;
   std::cout << "[DBG] bind worker " + std::to_string(id) + " to core " + std::to_string(core_id) << std::endl;
 
   cpu_set_t cpuset;
@@ -60,7 +69,7 @@ int Utils::getTupleTimestamp(long value) {
 }
 
 int Utils::getPowerOfTwo(int value) {
-  bool powerOfTwo = !(value == 0) && !(value & (value - 1));
+  bool powerOfTwo = value != 0 && !(value & (value - 1));
   if (!powerOfTwo) {
     int temp = 0;
     auto num = (double) value;
@@ -73,22 +82,22 @@ int Utils::getPowerOfTwo(int value) {
   return value;
 }
 
-bool Utils::__is_pointer_aligned(const void *p, int alignment) {
+bool Utils::_is_pointer_aligned(const void *p, int alignment) {
   return ((((uintptr_t) p) & (alignment - 1)) == 0);
 }
 
-bool Utils::__is_length_aligned(int length, int alignment) {
+bool Utils::_is_length_aligned(int length, int alignment) {
   return ((length & (alignment - 1)) == 0);
 }
 
-std::string Utils::GetCurrentWorkingDir() {
+std::string Utils::getCurrentWorkingDir() {
   char buff[FILENAME_MAX];
   GetCurrentDir(buff, FILENAME_MAX);
   std::string current_working_dir(buff);
   return current_working_dir;
 }
 
-std::string Utils::GetHomeDir() {
+std::string Utils::getHomeDir() {
   struct passwd *pw = getpwuid(getuid());
   const char *homedir = pw->pw_dir;
   return std::string(homedir);
@@ -127,7 +136,7 @@ void Utils::process_mem_usage(double &vm_usage, double &resident_set) {
   resident_set = rss * page_size_kb;
 }
 
-std::string Utils::GetStdoutFromCommand(std::string cmd) {
+std::string Utils::getStdoutFromCommand(std::string cmd) {
   std::string data;
   FILE *stream;
   const int max_buffer = 1024;
@@ -137,7 +146,7 @@ std::string Utils::GetStdoutFromCommand(std::string cmd) {
   stream = popen(cmd.c_str(), "r");
   if (stream) {
     while (!feof(stream))
-      if (fgets(buffer, max_buffer, stream) != NULL) data.append(buffer);
+      if (fgets(buffer, max_buffer, stream) != nullptr) data.append(buffer);
     pclose(stream);
   }
   return data;
@@ -163,6 +172,72 @@ void Utils::getOrderedCores (std::vector<int> &orderedCores) {
     }
   }
 }
+
+int Utils::getFirstCoreFromSocket(size_t socket) {
+  auto topo = boost::fibers::numa::topology();
+  if (socket > topo.size()) {
+    throw std::runtime_error("error: wrong socket number");
+  }
+  auto &soc = topo[socket];
+  for (auto &cpu_id: soc.logical_cpus) {
+    return (int) cpu_id;
+  }
+  return -1;
+}
+
+int Utils::fileExists(char const *file) {
+  return access(file, F_OK);
+}
+
+void Utils::readDirectory(const std::string &name, std::vector<std::string> &v) {
+  DIR* dirp = opendir(name.c_str());
+  struct dirent * dp;
+  while ((dp = readdir(dirp)) != nullptr) {
+    v.emplace_back(dp->d_name);
+  }
+  closedir(dirp);
+}
+
+void Utils::tryCreateDirectory(std::string dir) {
+  std::experimental::filesystem::path path{dir};
+  if (!std::experimental::filesystem::exists(
+      std::experimental::filesystem::status(path))) {
+    std::experimental::filesystem::create_directories(path);
+  }
+}
+
+template <typename T>
+void wrapArrayInVector(
+    T *sourceArray, size_t arraySize,
+    std::vector<T, boost::alignment::aligned_allocator<T, 64> > &targetVector) {
+  typename std::_Vector_base<
+      T, boost::alignment::aligned_allocator<T, 64> >::_Vector_impl *vectorPtr =
+      (typename std::_Vector_base<
+          T, boost::alignment::aligned_allocator<T, 64> >::_Vector_impl
+           *)((void *)&targetVector);
+  vectorPtr->_M_start = sourceArray;
+  vectorPtr->_M_finish = vectorPtr->_M_end_of_storage =
+      vectorPtr->_M_start + arraySize;
+}
+template void wrapArrayInVector(
+    char *sourceArray, size_t arraySize,
+    std::vector<char, boost::alignment::aligned_allocator<char, 64> >
+        &targetVector);
+
+template <typename T>
+void releaseVectorWrapper(
+    std::vector<T, boost::alignment::aligned_allocator<T, 64> > &targetVector) {
+  typename std::_Vector_base<
+      T, boost::alignment::aligned_allocator<T, 64> >::_Vector_impl *vectorPtr =
+      (typename std::_Vector_base<
+          T, boost::alignment::aligned_allocator<T, 64> >::_Vector_impl
+           *)((void *)&targetVector);
+  vectorPtr->_M_start = vectorPtr->_M_finish = vectorPtr->_M_end_of_storage =
+      nullptr;
+}
+template void releaseVectorWrapper(
+    std::vector<char, boost::alignment::aligned_allocator<char, 64> >
+        &targetVector);
 
 template<typename T>
 std::vector<T> computePercentiles(std::vector<T> &input, std::vector<double> &percentiles) {

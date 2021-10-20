@@ -1,86 +1,21 @@
-#include "gtest/gtest.h"
-
 #include "buffers/CircularQueryBuffer.h"
 #include "buffers/PartialWindowResultsFactory.h"
 #include "buffers/UnboundedQueryBufferFactory.h"
+#include "checkpoint/FileBackedCheckpointCoordinator.h"
+#include "compression/CompressionStatistics.h"
+#include "cql/operators/Aggregation.h"
+#include "cql/operators/NoOp.h"
+#include "cql/operators/OperatorCode.h"
+#include "dispatcher/TaskDispatcher.h"
+#include "gtest/gtest.h"
+#include "monitors/LatencyMonitor.h"
+#include "monitors/PerformanceMonitor.h"
+#include "result/ResultHandler.h"
 #include "tasks/TaskFactory.h"
 #include "tasks/WindowBatchFactory.h"
-#include "cql/operators/OperatorCode.h"
-#include "cql/operators/NoOp.h"
-#include "utils/QueryOperator.h"
 #include "utils/QueryApplication.h"
+#include "utils/QueryOperator.h"
 #include "utils/TupleSchema.h"
-#include "dispatcher/TaskDispatcher.h"
-#include "result/ResultHandler.h"
-#include "cql/expressions/ColumnReference.h"
-#include "cql/expressions/LongConstant.h"
-#include "cql/expressions/IntConstant.h"
-#include "cql/expressions/operations/Addition.h"
-#include "cql/expressions/operations/Multiplication.h"
-#include "cql/expressions/operations/Division.h"
-#include "cql/expressions/operations/Subtraction.h"
-#include "cql/predicates/ComparisonPredicate.h"
-#include "cql/operators/Selection.h"
-#include "cql/operators/Aggregation.h"
-#include "cql/operators/Projection.h"
-#include "monitors/PerformanceMonitor.h"
-#include "monitors/LatencyMonitor.h"
-
-TEST(Expressions, BasicExpressionAndPredicateCreation) {
-  ColumnReference ref1(0);
-  ColumnReference ref2(3);
-  LongConstant const1(2L);
-  IntConstant const2(5);
-  IntConstant const3(3);
-  Addition add(&const2, &const3);
-  Multiplication mul(&ref2, &add);
-  Division div(&ref1, &const1);
-  Subtraction sub(&div, &mul);
-  EXPECT_EQ(sub.toSExpr(), "( ( \"0\" / Constant 2 ) - ( \"3\" * ( Constant 5 + Constant 3 ) ) )");
-
-  ColumnReference ref3(1);
-  ComparisonPredicate pr1(NONEQUAL_OP, &sub, &ref3);
-  EXPECT_EQ(pr1.toSExpr(), "( ( \"0\" / Constant 2 ) - ( \"3\" * ( Constant 5 + Constant 3 ) ) ) != \"1\"");
-}
-
-TEST(Selection, OperatorInitialization) {
-  Selection selection(new ComparisonPredicate(LESS_OP, new ColumnReference(0), new IntConstant(100)));
-  EXPECT_EQ(selection.toSExpr(), "Selection (\"0\" < Constant 100)");
-}
-
-TEST(Projection, OperatorInitialization) {
-  std::vector<Expression *> expressions(3);
-  // Always project the timestamp
-  expressions[0] = new ColumnReference(0);
-  expressions[1] = new ColumnReference(1);
-  expressions[2] = new Division(new Multiplication(new IntConstant(3), new IntConstant(15)), new IntConstant(2));
-  Projection projection(expressions);
-  EXPECT_EQ(projection.toSExpr(), "Projection (\"0\", \"1\", ( ( Constant 3 * Constant 15 ) / Constant 2 ))");
-}
-
-TEST(Aggregation, OperatorInitialization) {
-  WindowDefinition windowDefinition(ROW_BASED, 1024, 32);
-  std::vector<AggregationType> aggregationTypes(2);
-  aggregationTypes[0] = AVG;
-  aggregationTypes[1] = MIN;
-  std::vector<ColumnReference *> aggregationAttributes(2);
-  aggregationAttributes[0] = new ColumnReference(1);
-  aggregationAttributes[1] = new ColumnReference(2);
-  std::vector<Expression *> groupByAttributes(1);
-  groupByAttributes[0] = new ColumnReference(2);
-  Aggregation aggregation(windowDefinition, aggregationTypes, aggregationAttributes, groupByAttributes);
-  std::cout << aggregation.toSExpr() << std::endl;
-  EXPECT_EQ(aggregation.toSExpr(),
-            "[Partial window u-aggregation] AVG(\"1\") MIN(\"2\") (group-by ? 1) (incremental ? 1)");
-}
-
-TEST(CircularBuffer, ProcessBytes) {
-  CircularQueryBuffer circularBuffer(0, 1024, 32);
-  std::vector<char> v(127);
-  circularBuffer.put(v.data(), v.size());
-  circularBuffer.free(127);
-  EXPECT_EQ(circularBuffer.getBytesProcessed(), 128);
-}
 
 TEST(PartialWindowResultsFactory, InitiliazeAndFree) {
   SystemConf::getInstance().PARTIAL_WINDOWS = 1024;
@@ -105,8 +40,7 @@ TEST(WindowBatchFactory, InitiliazeAndFree) {
   std::vector<QueryOperator *> operators;
   Query query(0, operators, window, &schema, 0);
   auto batch = WindowBatchFactory::getInstance().newInstance(
-      1024, 0, 1024, &query, &buffer, &window, &schema, 0
-  );
+      1024, 0, 1024, -1, &query, &buffer, &window, &schema, 0);
   EXPECT_EQ(batch->getTaskId(), 0);
   WindowBatchFactory::getInstance().free(batch);
   batch.reset();
@@ -115,8 +49,10 @@ TEST(WindowBatchFactory, InitiliazeAndFree) {
 TEST(TaskDispatcher, CreateTasks) {
   int batchSize = 64 * 1024;
   SystemConf::getInstance().BATCH_SIZE = batchSize;
-  std::unique_ptr<WindowDefinition> window = std::make_unique<WindowDefinition>(ROW_BASED, 1, 1);
-  std::unique_ptr<TupleSchema> schema = std::make_unique<TupleSchema>(2, "Stream");
+  std::unique_ptr<WindowDefinition> window =
+      std::make_unique<WindowDefinition>(ROW_BASED, 1, 1);
+  std::unique_ptr<TupleSchema> schema =
+      std::make_unique<TupleSchema>(2, "Stream");
   int numberOfAttributes = 1;
   for (int i = 1; i < numberOfAttributes + 1; i++) {
     auto attr = AttributeType(BasicType::Long);
@@ -129,9 +65,11 @@ TEST(TaskDispatcher, CreateTasks) {
   auto queryOperator = new QueryOperator(*cpuCode);
   std::vector<QueryOperator *> operators;
   operators.push_back(queryOperator);
-  long timestampReference = std::chrono::system_clock::now().time_since_epoch().count();
+  long timestampReference =
+      std::chrono::system_clock::now().time_since_epoch().count();
   std::vector<std::shared_ptr<Query>> queries(1);
-  queries[0] = std::make_shared<Query>(0, operators, *window, schema.get(), timestampReference);
+  queries[0] = std::make_shared<Query>(0, operators, *window, schema.get(),
+                                       timestampReference);
   auto application = new QueryApplication(queries);
 
   queries[0]->setParent(application);
@@ -149,14 +87,16 @@ TEST(TaskDispatcher, CreateTasks) {
   EXPECT_EQ(taskSize, 2);
   delete cpuCode;
   delete queryOperator;
-  delete application;
+  //delete application; // todo: fix this
 }
 
 TEST(ResultHandler, FreeSlots) {
   int batchSize = 64 * 1024;
   SystemConf::getInstance().BATCH_SIZE = batchSize;
-  std::unique_ptr<WindowDefinition> window = std::make_unique<WindowDefinition>(ROW_BASED, 1, 1);
-  std::unique_ptr<TupleSchema> schema = std::make_unique<TupleSchema>(2, "Stream");
+  std::unique_ptr<WindowDefinition> window =
+      std::make_unique<WindowDefinition>(ROW_BASED, 1, 1);
+  std::unique_ptr<TupleSchema> schema =
+      std::make_unique<TupleSchema>(2, "Stream");
   int numberOfAttributes = 1;
   for (int i = 1; i < numberOfAttributes + 1; i++) {
     auto attr = AttributeType(BasicType::Long);
@@ -169,9 +109,11 @@ TEST(ResultHandler, FreeSlots) {
   auto queryOperator = new QueryOperator(*cpuCode);
   std::vector<QueryOperator *> operators;
   operators.push_back(queryOperator);
-  long timestampReference = std::chrono::system_clock::now().time_since_epoch().count();
+  long timestampReference =
+      std::chrono::system_clock::now().time_since_epoch().count();
   std::vector<std::shared_ptr<Query>> queries(1);
-  queries[0] = std::make_shared<Query>(0, operators, *window, schema.get(), timestampReference);
+  queries[0] = std::make_shared<Query>(0, operators, *window, schema.get(),
+                                       timestampReference);
   auto application = new QueryApplication(queries);
 
   queries[0]->setParent(application);
@@ -195,7 +137,79 @@ TEST(ResultHandler, FreeSlots) {
 
   delete cpuCode;
   delete queryOperator;
-  delete application;
+  //delete application; // todo: fix this
+}
+
+TEST(CompressionStatistics, addStatistics) {
+  // 3 cols: (Timestamp, Int, Float)
+  auto cols = new std::vector<ColumnReference*>;
+  cols->push_back(new ColumnReference(0, BasicType::Long));
+  cols->push_back(new ColumnReference(1, BasicType::Integer));
+  cols->push_back(new ColumnReference(2, BasicType::Float));
+  CompressionStatistics stats (0, cols);
+
+  // generate data
+  struct input {
+    long timestamp;
+    int _1;
+    float _2;
+  };
+  std::vector<input> data(16);
+  for (size_t i = 0; i < 16; ++i) {
+    data[i].timestamp = (long)i/6;
+    data[i]._1 = 10*(int)i;
+    data[i]._2 = ((float) i) * (float) 0.001;
+  }
+
+  // gather statistics
+  std::vector<uint32_t> m_distinctVals(cols->size());
+  std::vector<double> m_consecutiveVals(cols->size(), 1);
+  std::vector<double> m_min(cols->size(), DBL_MAX), m_max(cols->size(), DBL_MIN), m_maxDiff(cols->size(), DBL_MIN);
+  auto timestamp = data[0].timestamp;
+  auto _1 = data[0]._1;
+  auto _2 = data[0]._2;
+  m_min[0] = timestamp; m_max[0] = timestamp;
+  m_min[1] = _1; m_max[1] = _1;
+  m_min[2] = _2; m_max[2] = _2;
+  for (size_t i = 1; i < 16; ++i) {
+    if (timestamp != data[i].timestamp) {
+      timestamp = data[i].timestamp;
+      m_consecutiveVals[0]++;
+    }
+    m_min[0] = std::min(m_min[0], (double)data[i].timestamp);
+    m_max[0] = std::max(m_max[0], (double)data[i].timestamp);
+    m_maxDiff[0] = std::max(m_maxDiff[0], (double)(data[i].timestamp - data[i-1].timestamp));
+
+    if (_1 != data[i]._1) {
+      _1 = data[i]._1;
+      m_consecutiveVals[1]++;
+    }
+    m_min[1] = std::min(m_min[1], (double)data[i]._1);
+    m_max[1] = std::max(m_max[1], (double)data[i]._1);
+    m_maxDiff[1] = std::max(m_maxDiff[1], (double)(data[i]._1 - data[i-1]._1));
+
+    if (_2 != data[i]._2) {
+      _2 = data[i]._2;
+      m_consecutiveVals[2]++;
+    }
+    m_min[2] = std::min(m_min[2], (double)data[i]._2);
+    m_max[2] = std::max(m_max[2], (double)data[i]._2);
+    m_maxDiff[2] = std::max(m_maxDiff[2], (double)(data[i]._2 - data[i-1]._2));
+  }
+  m_consecutiveVals[0] = 16 / m_consecutiveVals[0];
+  m_consecutiveVals[1] = 16 / m_consecutiveVals[1];
+  m_consecutiveVals[2] = 16 / m_consecutiveVals[2];
+
+  stats.addStatistics(m_distinctVals.data(), m_consecutiveVals.data(), m_min.data(), m_max.data(), m_maxDiff.data());
+  EXPECT_EQ(stats.updateCompressionDecision(), true);
+
+  EXPECT_EQ(stats.m_useRLE[0], true);
+  EXPECT_EQ(stats.m_useRLE[1], false);
+  EXPECT_EQ(stats.m_useRLE[2], false);
+  EXPECT_EQ(stats.m_precision[0], 2);
+  EXPECT_EQ(stats.m_precision[1], 8);
+  EXPECT_EQ(stats.m_diffPrecision[0], 2);
+  EXPECT_EQ(stats.m_diffPrecision[1], 8);
 }
 
 int main(int argc, char **argv) {

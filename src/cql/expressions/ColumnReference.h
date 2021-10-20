@@ -29,7 +29,14 @@ class ColumnReference : public Expression {
     s.append("\"").append(std::to_string(m_column)).append("\"");
     return s;
   }
+  void setExpression(std::string expression) {
+    m_expression = std::move(expression);
+  }
+  std::string getExpression() {
+    return m_expression;
+  }
   ~ColumnReference() override = default;
  private:
   int m_column;
+  std::string m_expression;
 };

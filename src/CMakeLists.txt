@@ -46,7 +46,7 @@ target_compile_options(operatorJITLib PRIVATE -Wall -Wextra -O3 -march=native)
 
 SET(HEADERS
         utils/Utils.h
-        buffers/NUMACircularQueryBuffer.h
+        buffers/NumaCircularQueryBuffer.h
         buffers/CircularQueryBuffer.h
         buffers/QueryBuffer.h
         buffers/PartialWindowResults.h
@@ -75,6 +75,8 @@ SET(HEADERS
         cql/predicates/ComparisonPredicate.h
         cql/predicates/ANDPredicate.h
         cql/predicates/ORPredicate.h
+        dispatcher/ITaskDispatcher.h
+        dispatcher/JoinTaskDispatcher.h
         dispatcher/TaskDispatcher.h
         monitors/LatencyMonitor.h
         monitors/Measurement.h
@@ -96,7 +98,16 @@ SET(HEADERS
         utils/WindowDefinition.h
         )
 SET(CPP_FILES
+        checkpoint/FileBackedCheckpointCoordinator.cpp
+        checkpoint/BlockManager.cpp
+        checkpoint/LineageGraph.cpp
+        cql/expressions/Expression.cpp
+        dispatcher/ITaskDispatcher.cpp
+        dispatcher/JoinTaskDispatcher.cpp
         dispatcher/TaskDispatcher.cpp
+        compression/CompressionCodeGenUtils.cpp
+        compression/CompressionStatistics.cpp
+        monitors/CompressionMonitor.cpp
         monitors/PerformanceMonitor.cpp
         monitors/LatencyMonitor.cpp
         monitors/Measurement.cpp
@@ -111,13 +122,25 @@ SET(CPP_FILES
         utils/SystemConf.cpp
         utils/Utils.cpp
         )
+SET(RDMA_CPP_FILES
+        RDMA/infinity/core/Context.cpp
+        RDMA/infinity/memory/Atomic.cpp
+        RDMA/infinity/memory/Buffer.cpp
+        RDMA/infinity/memory/Region.cpp
+        RDMA/infinity/memory/RegionToken.cpp
+        RDMA/infinity/memory/RegisteredMemory.cpp
+        RDMA/infinity/queues/QueuePair.cpp
+        RDMA/infinity/queues/QueuePairFactory.cpp
+        RDMA/infinity/requests/RequestToken.cpp
+        RDMA/infinity/utils/Address.cpp
+        )
 
 SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread -lnuma")
-SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -std=c++17 -g -Wall -Wextra -DHAVE_NUMA" )
+SET( CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -std=c++17 -g -Wall -Wextra -DHAVE_NUMA") #--gcc-toolchain=/usr/local/gcc/7.5.0
 
 #-mcx16
 
-add_executable(LightSaber ${HEADERS} ${CPP_FILES} main.cpp)
+add_executable(LightSaber ${HEADERS} ${CPP_FILES} ${RDMA_CPP_FILES} main.cpp)
 target_compile_options(LightSaber PRIVATE -O3 -march=native)
 
 
@@ -146,10 +169,24 @@ set_target_properties(operatorJITLib PROPERTIES
         CXX_EXTENSIONS OFF
         )
 
+#set(USER_PATH "/media/george/DATA")
+#set(USER_PATH "/home/grt17")
+set(USER_PATH $ENV{HOME})
+set(ENV{LLVM_HOME} "${USER_PATH}/llvm-project/build")
+message(STATUS "LLVM_HOME: $ENV{LLVM_HOME}")
+set(ENV{PATH} "$ENV{LLVM_HOME}/bin:$ENV{PATH}")
+message(STATUS "PATH: $ENV{PATH}")
+set(ENV{LIBRARY_PATH} "$ENV{LLVM_HOME}/lib:$ENV{LIBRARY_PATH}")
+message(STATUS "LIBRARY_PATH: $ENV{LIBRARY_PATH}")
+
 # add LLVM libraries, set LLVM_* variables
+set(LLVM_DIR "$ENV{LLVM_HOME}/lib/cmake/llvm")
 find_package(LLVM 9.0 REQUIRED PATHS ${LLVM_DIR})
 message(STATUS "LLVM_DIR: ${LLVM_DIR}")
 message(STATUS "LLVM_PACKAGE_VERSION: ${LLVM_PACKAGE_VERSION}")
+
+set(LLVM_BUILD_BINARY_DIR $ENV{LLVM_HOME})
+message(STATUS "LLVM_BUILD_BINARY_DIR: ${LLVM_BUILD_BINARY_DIR}")
 
 # add Clang libraries
 include(${LLVM_BUILD_BINARY_DIR}/lib/cmake/clang/ClangTargets.cmake)
@@ -163,6 +200,10 @@ if (USE_LLD)
     message(STATUS "Add option to link with LLD")
     target_link_libraries(operatorJITLib PRIVATE "-fuse-ld=lld")
 endif ()
+
+set(LLVM_BUILD_MAIN_SRC_DIR "${USER_PATH}/llvm-project/llvm")
+message(STATUS "LLVM_BUILD_MAIN_SRC_DIR: ${LLVM_BUILD_MAIN_SRC_DIR}")
+
 
 # find Clang source directory
 if (EXISTS ${LLVM_BUILD_MAIN_SRC_DIR}/tools/clang)

@@ -1,6 +1,6 @@
 #include "tasks/WindowBatch.h"
 #include "utils/Utils.h"
-#include "buffers/NUMACircularQueryBuffer.h"
+#include "buffers/NumaBuffer.h"
 #include "buffers/PartialWindowResults.h"
 #include "utils/Query.h"
 #include "utils/TupleSchema.h"
@@ -14,24 +14,31 @@
  *
  * */
 
-WindowBatch::WindowBatch(size_t batchSize, int taskId, int freePointer,
-                         Query *query, QueryBuffer *buffer,
-                         WindowDefinition *windowDefinition, TupleSchema *schema, long mark) :
-    m_batchSize(batchSize), m_taskId(taskId), m_freePointer(freePointer), m_query(query), m_inputBuffer(buffer),
+WindowBatch::WindowBatch(size_t batchSize, int taskId, long freePointer1,
+                         long freePointer2, Query *query, QueryBuffer *buffer,
+                         WindowDefinition *windowDefinition, TupleSchema *schema, long mark,
+                         long prevFreePointer1, long prevFreePointer2) :
+    m_batchSize(batchSize), m_taskId(taskId), m_pid(0), m_freePointer1(freePointer1),
+    m_freePointer2(freePointer2), m_prevFreePointer1(prevFreePointer1),
+    m_prevFreePointer2(prevFreePointer2), m_query(query), m_inputBuffer(buffer),
     m_openingWindows(nullptr), m_closingWindows(nullptr), m_pendingWindows(nullptr), m_completeWindows(nullptr),
     m_windowDefinition(windowDefinition), m_schema(schema), m_latencyMark(mark), m_startPointer(-1), m_endPointer(-1),
     m_streamStartPointer(-1), m_streamEndPointer(-1), m_startTimestamp(-1), m_endTimestamp(-1),
     m_windowStartPointers(SystemConf::getInstance().PARTIAL_WINDOWS),
     m_windowEndPointers(SystemConf::getInstance().PARTIAL_WINDOWS), m_lastWindowIndex(0),
-    m_fragmentedWindows(false), m_hasPendingWindows(false), m_initialised(false) {}
+    m_fragmentedWindows(false), m_hasPendingWindows(false), m_initialised(false), m_type(TaskType::PROCESS) {}
 
-void WindowBatch::set(size_t batchSize, int taskId, int freePointer,
-                      Query *query, QueryBuffer *buffer,
-                      WindowDefinition *windowDefinition, TupleSchema *schema, long mark) {
+void WindowBatch::set(size_t batchSize, int taskId, long freePointer1,
+                      long freePointer2, Query *query, QueryBuffer *buffer,
+                      WindowDefinition *windowDefinition, TupleSchema *schema, long mark,
+                      long prevFreePointer1, long prevFreePointer2) {
 
   m_batchSize = batchSize;
   m_taskId = taskId;
-  m_freePointer = freePointer;
+  m_freePointer1 = freePointer1;
+  m_freePointer2 = freePointer2;
+  m_prevFreePointer1 = prevFreePointer1;
+  m_prevFreePointer2 = prevFreePointer2;
   m_query = query;
   m_inputBuffer = buffer;
   m_windowDefinition = windowDefinition;
@@ -53,8 +60,11 @@ void WindowBatch::set(size_t batchSize, int taskId, int freePointer,
   m_replayTimestamps = false;
   m_offset = 0;
 
+  m_type = TaskType::PROCESS;
+
 #if defined(HAVE_NUMA)
-  m_numaNodeId = ((NUMACircularQueryBuffer *) m_inputBuffer)->geNumaNodeWithPtr(m_freePointer);
+  NumaBuffer *b = dynamic_cast<NumaBuffer *>(m_inputBuffer);
+  m_numaNodeId = (m_inputBuffer) ? b->geNumaNodeWithPtr(m_freePointer1) : 0;
 #else
   m_numaNodeId = 0;
 #endif
@@ -106,7 +116,9 @@ QueryBuffer *WindowBatch::getInputQueryBuffer() {
 
 ByteBuffer &WindowBatch::getBuffer() {
 #if defined(HAVE_NUMA)
-  return ((NUMACircularQueryBuffer *)m_inputBuffer)->getBuffer(m_numaNodeId);
+  NumaBuffer *b = dynamic_cast<NumaBuffer *>(m_inputBuffer);
+  assert(b != nullptr && "error: invalid buffer pointer");
+  return b->getBuffer(m_numaNodeId);
 #else
   return m_inputBuffer->getBuffer();
 #endif
@@ -114,7 +126,7 @@ ByteBuffer &WindowBatch::getBuffer() {
 
 char *WindowBatch::getBufferRaw() {
 #if defined(HAVE_NUMA)
-  NUMACircularQueryBuffer *b = dynamic_cast<NUMACircularQueryBuffer *>(m_inputBuffer);
+  NumaBuffer *b = dynamic_cast<NumaBuffer *>(m_inputBuffer);
   assert(b != nullptr && "error: invalid buffer pointer");
   return b->getBufferRaw(m_numaNodeId);
 #else
@@ -142,25 +154,53 @@ WindowDefinition *WindowBatch::getWindowDefinition() {
   return m_windowDefinition;
 }
 
-int WindowBatch::getFreePointer() {
-  return m_freePointer;
+void WindowBatch::setLineageGraph(std::shared_ptr<LineageGraph> &graph) {
+  /*if (m_graph && m_graph.use_count() == 1) {
+    LineageGraphFactory::getInstance().free(m_graph);
+  }*/
+  m_graph.reset();
+  m_graph = std::move(graph);
+  if (graph) {
+    graph.reset();
+  }
 }
 
-int WindowBatch::getBufferStartPointer() {
+std::shared_ptr<LineageGraph> &WindowBatch::getLineageGraph() {
+  return m_graph;
+}
+
+long WindowBatch::getFreePointer() {
+  return m_freePointer1;
+}
+
+long WindowBatch::getSecondFreePointer() {
+  return m_freePointer2;
+}
+
+long WindowBatch::getPrevFreePointer() {
+  return m_prevFreePointer1;
+}
+
+long WindowBatch::getPrevSecondFreePointer() {
+  return m_prevFreePointer2;
+}
+
+long WindowBatch::getBufferStartPointer() {
   return m_startPointer;
-
 }
 
-int WindowBatch::getBufferEndPointer() {
+long WindowBatch::getBufferEndPointer() {
   return m_endPointer;
 }
 
-void WindowBatch::setBufferPointers(int startP, int endP) {
+void WindowBatch::setBufferPointers(long startP, long endP) {
 #if defined(HAVE_NUMA)
-  m_startPointer = startP % ((NUMACircularQueryBuffer*)m_inputBuffer)->getBuffer(m_numaNodeId).size();
-  m_endPointer = endP % ((NUMACircularQueryBuffer*)m_inputBuffer)->getBuffer(m_numaNodeId).size();
+  NumaBuffer *b = dynamic_cast<NumaBuffer *>(m_inputBuffer);
+  assert(b != nullptr && "error: invalid buffer pointer");
+  m_startPointer = startP % b->getBuffer(m_numaNodeId).size();
+  m_endPointer = endP % b->getBuffer(m_numaNodeId).size();
   if (m_endPointer == 0)
-      m_endPointer = ((NUMACircularQueryBuffer*)m_inputBuffer)->getBuffer(m_numaNodeId).size();
+      m_endPointer = b->getBuffer(m_numaNodeId).size();
 #else
   m_startPointer = startP;
   m_endPointer = endP;
@@ -211,9 +251,11 @@ bool WindowBatch::hasTimestampOffset() {
 }
 void WindowBatch::updateTimestamps() {
 #if defined(HAVE_NUMA)
-  auto buf = (long *) ((NUMACircularQueryBuffer*)m_inputBuffer)->getBuffer(m_numaNodeId).data();
+  NumaBuffer *b = dynamic_cast<NumaBuffer *>(m_inputBuffer);
+  assert(b != nullptr && "error: invalid buffer pointer");
+  auto buf = (long *) b->getBuffer(m_numaNodeId).data();
 #else
-  auto buf = (long *) m_inputBuffer->getBuffer().data();
+  auto buf = (long *) m_inputBuffer->getBufferRaw();
 #endif
 
   auto tupleSize = m_schema->getTupleSize();
@@ -281,6 +323,7 @@ int WindowBatch::getLastWindowIndex() {
 }
 
 void WindowBatch::clear() {
+  m_graph.reset();
   m_initialised = false;
   m_openingWindows.reset();
   m_closingWindows.reset();
@@ -294,11 +337,11 @@ void WindowBatch::resetWindowPointers() {
   std::fill(m_windowEndPointers.begin(), m_windowEndPointers.end(), -1);
 }
 
-int WindowBatch::normalise(int pointer) {
-  return (int) m_inputBuffer->normalise((long) pointer);
+long WindowBatch::normalise(long pointer) {
+  return m_inputBuffer->normalise(pointer);
 }
 
-long WindowBatch::getTimestamp(int index) {
+long WindowBatch::getTimestamp(long index) {
   long value = m_inputBuffer->getLong((size_t) index);
   if (SystemConf::getInstance().LATENCY_ON)
     return (long) Utils::getTupleTimestamp(value);
@@ -330,6 +373,22 @@ long WindowBatch::getEmptyStartWindowId() {
 
 long WindowBatch::getEmptyEndWindowId() {
   return m_emptyEndWindowId;
+}
+
+void WindowBatch::setWatermark (long watermark) {
+  m_watermark = watermark;
+}
+
+long WindowBatch::getWatermark () {
+  return m_watermark;
+}
+
+void WindowBatch::setPartialBuffer(char *partial) {
+  m_partialBuffer = partial;
+}
+
+char *WindowBatch::getPartialBuffer() {
+  return m_partialBuffer;
 }
 
 void WindowBatch::initPartialWindowPointers() {

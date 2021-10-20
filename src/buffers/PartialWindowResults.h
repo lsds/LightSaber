@@ -48,7 +48,8 @@ class PartialWindowResults {
     //std::cout << "[DBG] Thread " << sched_getcpu()  << " in " << node << " numa node." << std::endl;
     if (type == 1) {
       for (size_t i = 0; i < m_bufferPtrs.size(); ++i) {
-        m_bufferPtrs[i] = (char *) _mm_malloc(capacity * sizeof(char), 64);
+        //m_bufferPtrs[i] = (char *) _mm_malloc(capacity * sizeof(char), 64);
+        m_bufferPtrs[i] = (char *) _mm_malloc(capacity * sizeof(char), 512);
       }
     }
     //SystemConf::getInstance().findMemoryNodeForAddress(&bufferPtrs[2], node);
@@ -81,6 +82,14 @@ class PartialWindowResults {
           "error: getting a buffer of pointers from partial window buffer of this type is not implemented");
   }
 
+  char **getBufferPtrsRaw() {
+    if (m_type == 1)
+      return m_bufferPtrs.data();
+    else
+      throw std::runtime_error(
+          "error: getting a buffer of pointers from partial window buffer of this type is not implemented");
+  }
+
   size_t getCapacity() {
     return m_capacity;
   }
@@ -91,6 +100,9 @@ class PartialWindowResults {
 
   void clear() {
     //std::fill(buffer.begin(), buffer.end(), 0);
+    if (m_type == 0) {
+      m_position = 0;
+    }
   }
 
   void reset() {
@@ -105,6 +117,7 @@ class PartialWindowResults {
 
   void init() {
     m_count = 0;
+    m_position = 0;
   }
 
   void nullify() {
@@ -116,7 +129,8 @@ class PartialWindowResults {
 
   void increment() {
     if (m_count > (int) m_partialWindows)
-      throw std::out_of_range("error: partial window result index out of bounds while incrementing the counter");
+      throw std::out_of_range("error: partial window result index out of bounds while incrementing the counter ("
+                                  + std::to_string(m_count) + " > " + std::to_string(m_partialWindows) + ")");
     m_startPointers[m_count] = (int) getPosition();
     m_count++;
   }
@@ -125,14 +139,16 @@ class PartialWindowResults {
     m_count += cnt;
     if (m_count > (int) m_partialWindows)
       throw std::out_of_range(
-          "error: partial window result index out of bounds while incrementing the counter with a value");
+          "error: partial window result index out of bounds while incrementing the counter ("
+          + std::to_string(m_count) + " > " + std::to_string(m_partialWindows) + ")");
   }
 
   void setCount(int cnt) {
     m_count = cnt;
     if (m_count > (int) m_partialWindows)
       throw std::out_of_range(
-          "error: partial window result index out of bounds while incrementing the counter with a value");
+          "error: partial window result index out of bounds while incrementing the counter with a value ("
+              + std::to_string(m_count) + " > " + std::to_string(m_partialWindows) + ")");
   }
 
   int getStartPointer(int idx) {

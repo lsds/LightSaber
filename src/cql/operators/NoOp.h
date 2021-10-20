@@ -22,7 +22,7 @@ class NoOp : public OperatorCode {
     s.append("NoOp (").append(")");
     return s;
   }
-  void processData(const std::shared_ptr<WindowBatch> &batch, Task &task, int pid) override {
+  void processData(const std::shared_ptr<WindowBatch>& batch, Task &task, int pid) override {
 
     //batch->initPartialCountBasedWindowPointers();
 
@@ -41,17 +41,24 @@ class NoOp : public OperatorCode {
 
     auto outputBuffer = PartialWindowResultsFactory::getInstance().newInstance(pid);
 
-    inputBuffer->appendBytesTo(startP, endP, outputBuffer->getBuffer());
+    inputBuffer->appendBytesTo(startP, endP, outputBuffer->getBufferRaw());
     outputBuffer->setPosition(batch->getBatchSize());
     batch->setOutputBuffer(outputBuffer);
 
     /*auto tupleSize = batch->getSchema()->getTupleSize();
-    auto output = (_InputSchema *) batch->getOutputBuffer()->getBuffer().data();
+    auto output = (_InputSchema *) batch->getOutputBuffer()->getBufferRaw();
     for (int i = 0; i < batch->getBatchSize()/tupleSize; i++) {
         std::cout << "[DBG] timestamp "+std::to_string(output[i].timestamp)+", attr1 "+std::to_string(output[i].attr_1)+", attr2 "+std::to_string(output[i].attr_2) << std::endl;
     }*/
 
     task.outputWindowBatchResult(batch);
+  }
+  void processData(const std::shared_ptr<WindowBatch>& lBatch, const std::shared_ptr<WindowBatch>& rBatch, Task &task, int pid) override {
+    (void) lBatch;
+    (void) rBatch;
+    (void) task;
+    (void) pid;
+    throw std::runtime_error("error: this operator cannot be used directly");
   }
   TupleSchema &getOutputSchema() override {
     return m_inputSchema;
