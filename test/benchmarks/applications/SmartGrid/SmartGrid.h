@@ -59,14 +59,48 @@ class SmartGrid : public BenchmarkQuery {
     m_data = new std::vector<char>(len);
     auto buf = (InputSchema *) m_data->data();
 
-    std::string filePath = Utils::GetHomeDir() + "/LightSaber/resources/datasets/smartgrid/";
+    std::string filePath = Utils::getHomeDir() + "/LightSaber/resources/datasets/smartgrid/";
     std::ifstream file(filePath + "smartgrid-data.txt");
+    if (!file.good())
+      throw std::runtime_error("error: input file does not exist, check the path.");
     std::string line;
     unsigned long idx = 0;
     while (std::getline(file, line) && idx < len / sizeof(InputSchema)) {
       InputSchema::parse(buf[idx], line, normalisedTimestamp);
+      if (m_startTimestamp == 0) {
+        m_startTimestamp = buf[0].timestamp;
+      }
+      m_endTimestamp = buf[idx].timestamp;
       idx++;
     }
+
+    if (idx < len / sizeof(InputSchema)) {
+      unsigned long iter = 0;
+      auto barrier = idx-1;
+      long lastTime = buf[idx-1].timestamp;
+      while (idx < len / sizeof(InputSchema)) {
+        std::memcpy(&buf[idx], &buf[iter], sizeof(InputSchema));
+        buf[idx].timestamp += lastTime;
+        m_endTimestamp = buf[idx].timestamp;
+        idx++;
+        iter++;
+        if (iter == barrier) {
+          iter = 0;
+          lastTime = buf[idx-1].timestamp;
+        }
+      }
+    }
+
+    /*for (unsigned long i = 0; i < m_data->size() / sizeof(InputSchema); ++i) {
+      if (i%10==0) {
+        auto value = (int) std::round(buf[i].value * 1000);
+        auto ii = 0;
+        for (;ii < 10 && i < m_data->size() / sizeof(InputSchema); ++i) {
+          buf[i].value = value;
+          ii++;
+        }
+      }
+    }*/
 
     if (m_debug) {
       std::cout << "timestamp value property plug household house" << std::endl;

@@ -52,7 +52,7 @@ long normalisedTimestamp = -1;
 struct alignas(64) InputSchema {
   long timestamp;
   long messageIndex;
-  int value;           //Electrical Power Main Phase 1
+  int value;          //Electrical Power Main Phase 1
   int mf02;           //Electrical Power Main Phase 2
   int mf03;           //Electrical Power Main Phase 3
   int pc13;           //Anode Current Drop Detection Cell 1
@@ -108,7 +108,7 @@ void loadData() {
   boost::posix_time::ptime myEpoch;
   is >> myEpoch;
 
-  std::string filePath = Utils::GetHomeDir() + "/LightSaber/resources/datasets/manufacturing_equipment/";
+  std::string filePath = Utils::getHomeDir() + "/LightSaber/resources/datasets/manufacturing_equipment/";
   std::ifstream file(filePath + "DEBS2012-small.txt");
   std::string line;
   unsigned long idx = 0;
@@ -148,7 +148,7 @@ void generateFunctionsSingle(int argc, const char **argv, std::vector<WindowDefi
   else
     aggrs.push_back(AggregationType::MIN);
   GeneralAggregationGraph gag(&windows.front(), &aggrs);
-  std::string path = Utils::GetCurrentWorkingDir() + "/GeneratedCode.cpp";
+  std::string path = Utils::getCurrentWorkingDir() + "/GeneratedCode.cpp";
   auto sourceCode = gag.generateCode(false, true);
   std::ofstream out(path);
   out << sourceCode;
@@ -201,7 +201,7 @@ void generateFunctionsMultiple(int argc, const char **argv, std::vector<WindowDe
       mulAggrs.push_back({AggregationType::MIN});
   }
   GeneralAggregationGraph gag(&windows, &mulAggrs);
-  std::string path = Utils::GetCurrentWorkingDir() + "/GeneratedCode.cpp";
+  std::string path = Utils::getCurrentWorkingDir() + "/GeneratedCode.cpp";
   auto sourceCode = gag.generateCode(false, true);
   std::ofstream out(path);
   out << sourceCode;
@@ -375,7 +375,7 @@ int main(int argc, const char **argv) {
 
   // give the path of the file...
   //argc++;
-  std::string path = Utils::GetCurrentWorkingDir() + "/GeneratedCode.cpp";
+  std::string path = Utils::getCurrentWorkingDir() + "/GeneratedCode.cpp";
   argv[1] = path.c_str();
   int type = 3;
   int num = 5;

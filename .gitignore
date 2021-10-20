@@ -1,4 +1,5 @@
 .idea/*
+build/*
 cmake-build-*/*
 cmake-build-debug/*
 scripts/*.txt
@@ -16,3 +17,5 @@ scripts/benchmarks/*.dat
 *eps
 resources/datasets/google-cluster-data/saber-debs-demo.data
 resources/datasets/lrb/datafile3hours.dat
+.DS_Store
+/docs/.DS_Store

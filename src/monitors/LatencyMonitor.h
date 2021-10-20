@@ -1,13 +1,15 @@
 #pragma once
 
-#include <cfloat>
-#include <string>
-#include <iomanip>
-#include <chrono>
-#include <ctime>
-#include <cmath>
+#include <utils/SystemConf.h>
+
 #include <atomic>
+#include <cfloat>
+#include <chrono>
+#include <cmath>
+#include <ctime>
+#include <iomanip>
 #include <iostream>
+#include <string>
 #include <vector>
 
 class QueryBuffer;
@@ -26,17 +28,26 @@ class LatencyMonitor {
   long m_count;
   double m_min, m_max, m_avg;
   long m_timestampReference = 0;
+  long m_lastTimestamp = 0;
   double m_latency;
   std::atomic<bool> m_active;
   std::vector<double> m_measurements;
+  const std::string m_fileName =  SystemConf::FILE_ROOT_PATH + "/scabbard/latency-metrics";
+  const std::string m_fileName2 =  SystemConf::FILE_ROOT_PATH + "/scabbard/latency-metrics-2";
+  int m_fd, m_fd2;
+  bool m_clearFiles;
+  long m_restartReference = 0;
+  double m_remainingTime = 0.;
 
  public:
-  explicit LatencyMonitor(long timeReference);
+  explicit LatencyMonitor(long timeReference, bool clearFiles = true);
   void disable();
   std::string toString();
   void monitor(QueryBuffer &buffer, long latencyMark);
+  [[nodiscard]] long getTimestampReference() const;
+  [[nodiscard]] long getLastTimestamp() const;
   void stop();
 
  private:
-  double evaluateSorted(const double p);
+  double evaluateSorted(double p);
 };

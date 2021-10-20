@@ -79,10 +79,11 @@ class LRB1 : public LinearRoadBenchmark {
   }
 
  public:
-  LRB1(bool inMemory = true) {
+  LRB1(bool inMemory = true, bool startApp = true) {
     m_name = "LRB1";
     createSchema();
-    createApplication();
+    if (startApp)
+      createApplication();
     m_fileName = "lrb-data-small-ht.txt";
     if (inMemory)
       loadInMemoryData();

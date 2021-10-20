@@ -48,6 +48,13 @@ class PartialWindowResultsFactory {
           std::make_shared<PartialWindowResults>(pid, SystemConf::getInstance().UNBOUNDED_BUFFER_SIZE);
     }
     partialWindowResults->init();
+
+    /*if (partialWindowResults.use_count() != 1) {
+      std::cout << "warning: the partial result has a reference counter of " + std::to_string(partialWindowResults.use_count()) << std::endl;
+      //throw std::runtime_error("error: the partial result should have only one reference when we free it: " +
+      //    std::to_string(partialWindowResults.use_count()));
+    }*/
+
     return partialWindowResults;
   }
 
@@ -73,8 +80,14 @@ class PartialWindowResultsFactory {
   }
 
   void free(int pid, std::shared_ptr<PartialWindowResults> &partialWindowResults) {
-    //if (partialWindowResults.use_count() != 1)
-    //    throw std::runtime_error("error: the partial result should have only one reference when we free it: " + std::to_string(partialWindowResults.use_count()));
+    /*if (partialWindowResults.use_count() != 1) {
+      std::cout << "warning: the partial result has a reference counter of " + std::to_string(partialWindowResults.use_count()) << std::endl;
+      throw std::runtime_error("error: the partial result should have only one reference when we free it: " +
+          std::to_string(partialWindowResults.use_count()));
+    }*/
+    if (pid >= m_numberOfThreads)
+      throw std::runtime_error("error: attempting to free partial window with pid: " + std::to_string(pid)
+                               + " >= " + std::to_string(m_numberOfThreads));
 
     if (partialWindowResults->getType() == 0) {
       m_poolSeqMem[pid].push(partialWindowResults);

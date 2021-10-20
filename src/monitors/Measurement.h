@@ -1,7 +1,7 @@
 #pragma once
 
 class QueryBuffer;
-class TaskDispatcher;
+class ITaskDispatcher;
 class ResultHandler;
 class LatencyMonitor;
 
@@ -17,8 +17,8 @@ class LatencyMonitor;
 class Measurement {
  private:
   int m_id;
-  TaskDispatcher *m_dispatcher;
-  QueryBuffer *m_buffer;
+  ITaskDispatcher *m_dispatcher;
+  QueryBuffer *m_firstBuffer, *m_secondBuffer = nullptr;
   LatencyMonitor *m_monitor;
   double m_Dt;
   double m__1MB_ = 1048576.0;
@@ -30,7 +30,7 @@ class Measurement {
   static int m_measurements;
 
  public:
-  Measurement(int id = -1, TaskDispatcher *dispatcher = nullptr, LatencyMonitor *monitor = nullptr);
+  Measurement(int id = -1, ITaskDispatcher *dispatcher = nullptr, LatencyMonitor *monitor = nullptr);
   void stop();
   std::string getInfo(long delta, int inputTuple = 0, int outputTuple = 0);
   ~Measurement();

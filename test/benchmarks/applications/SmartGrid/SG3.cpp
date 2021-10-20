@@ -60,10 +60,11 @@ class SG3 : public SmartGrid {
   }
 
  public:
-  SG3(bool inMemory = true) {
+  SG3(bool inMemory = true, bool startApp = true) {
     m_name = "SG3";
     createSchema();
-    createApplication();
+    if (startApp)
+      createApplication();
     if (inMemory)
       loadInMemoryData();
   }

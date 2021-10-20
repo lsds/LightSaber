@@ -29,19 +29,22 @@ class TaskFactory {
   TaskFactory(TaskFactory const &) = delete;
   void operator=(TaskFactory const &) = delete;
 
-  std::shared_ptr<Task> newInstance(int taskId, std::shared_ptr<WindowBatch> batch, TaskType type = TaskType::PROCESS) {
+  std::shared_ptr<Task> newInstance(int taskId, const std::shared_ptr<WindowBatch>& lBatch, const std::shared_ptr<WindowBatch>& rBatch, TaskType type = TaskType::PROCESS) {
     std::shared_ptr<Task> task;
     bool hasRemaining = m_pool.try_pop(task);
     if (!hasRemaining) {
       m_count.fetch_add(1);
-      task = std::make_shared<Task>(taskId, batch, type);
+      task = std::make_shared<Task>(taskId, lBatch, rBatch, type);
     }
-    task->set(taskId, batch, type);
+    task->set(taskId, lBatch, rBatch, type);
     return task;
   }
 
   void free(std::shared_ptr<Task> &task) {
     //std::cout << "[DBG] free task "+std::to_string(task->getTaskId())+" task-refs "+std::to_string(task.use_count()) << std::endl;
+    if (task->getLineageGraph()) {
+      throw std::runtime_error("error: invalid place for a graph");
+    }
     m_pool.push(task);
     task.reset();
   }

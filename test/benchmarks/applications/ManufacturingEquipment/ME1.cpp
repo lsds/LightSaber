@@ -63,10 +63,11 @@ class ME1 : public ManufacturingEquipment {
   }
 
  public:
-  ME1(bool inMemory = true) {
+  ME1(bool inMemory = true, bool startApp = true) {
     m_name = "ME1";
     createSchema();
-    createApplication();
+    if (startApp)
+      createApplication();
     if (inMemory)
       loadInMemoryData();
   }

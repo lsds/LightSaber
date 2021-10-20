@@ -1,7 +1,17 @@
-#include <numa.h>
+#include <inttypes.h>
 #include <mm_malloc.h>
+#include <numa.h>
+#include <stdint.h>
 
 namespace NumaAlloc {
+
+#define ALIGNMENT 512
+
+static inline void memset_16aligned(void *space, char byte, size_t nbytes) {
+  assert((nbytes & 0x0F) == 0);
+  assert(((uintptr_t)space & 0x0F) == 0);
+  memset(space, byte, nbytes);
+}
 
 /**
  * \brief An STL allocator that uses memory of a specific NUMA node only
@@ -98,9 +108,17 @@ return a.max_size() / sizeof(T);
     numa_set_preferred(m_numaNode);
     numa_set_bind_policy(m_numaNode);
     numa_set_strict(m_numaNode);
-    auto ret = numa_alloc_onnode(n * sizeof(T), m_numaNode);
-    if (!ret)
-      throw std::bad_alloc();
+    //auto ret = numa_alloc_onnode(n * sizeof(T), m_numaNode);
+    //if (!ret) throw std::bad_alloc();
+
+    uintptr_t mask = ~(uintptr_t)(ALIGNMENT - 1);
+    auto mem = numa_alloc_onnode(n * sizeof(T) + ALIGNMENT - 1, m_numaNode);
+    if (!mem) throw std::bad_alloc();
+    void *ret = (void *)(((uintptr_t)mem + ALIGNMENT - 1) & mask);
+    assert((ALIGNMENT & (ALIGNMENT - 1)) == 0);
+    printf("0x%08" PRIXPTR ", 0x%08" PRIXPTR "\n", (uintptr_t)mem,
+           (uintptr_t)ret);
+    memset_16aligned(ret, 0, std::min((size_t)1024, n * sizeof(T)));
 
     ((char *) ret)[0] = 0;
     //memset(ret, 0, n);
@@ -108,8 +126,11 @@ return a.max_size() / sizeof(T);
   }
 
   void deallocate(m_pointer p, m_size_type n) {
-    if (p)
+    if (p) {
       numa_free(static_cast<void *>(p), n * sizeof(T));
+      // todo: fix leaking memory here
+      // numa_free(((void**)p)[-1], n * sizeof(T));
+    }
   }
 
   template<class U, class... Args>

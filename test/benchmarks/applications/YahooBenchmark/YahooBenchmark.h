@@ -86,11 +86,11 @@ class YahooBenchmark : public BenchmarkQuery {
 
   virtual void createApplication() = 0;
 
-  void loadInMemoryData() {
+  void loadInMemoryData(uint32_t campaignNum = 100) {
     if (m_is64)
       loadInMemoryData_64();
     else
-      loadInMemoryData_128();
+      loadInMemoryData_128(campaignNum);
   };
 
   void loadInMemoryData_64() {
@@ -133,6 +133,10 @@ class YahooBenchmark : public BenchmarkQuery {
           std::to_string(ad_id) + " " + std::to_string(ad_type) + " " + std::to_string(event_type) + " " +
           std::to_string(-1);
       InputSchema_64::parse(buf[idx], line);
+      if (m_startTimestamp == 0) {
+        m_startTimestamp = buf[0].timestamp;
+      }
+      m_endTimestamp = buf[idx].timestamp;
       idx++;
     }
 
@@ -146,22 +150,25 @@ class YahooBenchmark : public BenchmarkQuery {
     }
   };
 
-  void loadInMemoryData_128() {
+  void loadInMemoryData_128(uint32_t campaignNum) {
     std::random_device rd;
     std::mt19937_64 eng(rd());
     std::uniform_int_distribution<long> distr(0, 1000000);
 
     std::unordered_set<long> set;
 
+    auto adsNum = campaignNum * 10;
+    assert(adsNum <= 100000);
+    size_t totalSize = Utils::getPowerOfTwo(adsNum);
     size_t len = SystemConf::getInstance().BUNDLE_SIZE;
     m_data = new std::vector<char>(len);
-    m_staticData = new std::vector<char>(2 * sizeof(__uint128_t) * 1024);
+    m_staticData = new std::vector<char>(2 * sizeof(__uint128_t) * totalSize);
     auto buf = (InputSchema_128 *) m_data->data();
     auto staticBuf = (__uint128_t *) m_staticData->data();
 
     long campaign_id = distr(eng); //0;
     set.insert(campaign_id);
-    for (unsigned long i = 0; i < 1000; ++i) {
+    for (unsigned long i = 0; i < adsNum; ++i) {
       if (i > 0 && i % 10 == 0) {
         campaign_id = distr(eng); //++;
         bool is_in = set.find(campaign_id) != set.end();
@@ -179,13 +186,17 @@ class YahooBenchmark : public BenchmarkQuery {
     auto page_id = distr(eng);
     unsigned long idx = 0;
     while (idx < len / sizeof(InputSchema_128)) {
-      auto ad_id = staticBuf[((idx % 100000) % 1000) * 2];
+      auto ad_id = staticBuf[((idx % 100000) % adsNum) * 2];
       auto ad_type = (idx % 100000) % 5;
       auto event_type = (idx % 100000) % 3;
       line = std::to_string(idx / 1000) + " " + std::to_string(user_id) + " " + std::to_string(page_id) + " " +
           std::to_string((long) ad_id) + " " + std::to_string(ad_type) + " " + std::to_string(event_type) + " " +
           std::to_string(-1);
       InputSchema_128::parse(buf[idx], line);
+      if (m_startTimestamp == 0) {
+        m_startTimestamp = buf[0].timestamp;
+      }
+      m_endTimestamp = buf[idx].timestamp;
       idx++;
     }
 

@@ -15,10 +15,8 @@ class OperatorKernel;
  * */
 
 class AggregateOperatorCode {
- private:
+ protected:
   long m_hashTableSize = 0;
-
-  friend OperatorKernel;
 
  public:
   virtual void aggregatePartials(std::shared_ptr<PartialWindowResults> openingWindows,

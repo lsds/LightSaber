@@ -1,14 +1,48 @@
 #include "monitors/LatencyMonitor.h"
+
+#include <unistd.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <cstdio>
+
 #include "utils/Utils.h"
 #include "buffers/QueryBuffer.h"
 
-LatencyMonitor::LatencyMonitor(long timeReference) : m_count(0L),
+LatencyMonitor::LatencyMonitor(long timeReference, bool clearFiles) : m_count(0L),
                                                      m_min(DBL_MAX),
                                                      m_max(DBL_MIN),
                                                      m_avg(0.0),
                                                      m_timestampReference(timeReference),
                                                      m_latency(0.0),
-                                                     m_active(true) {}
+                                                     m_active(true),
+                                                     m_clearFiles(clearFiles) {
+
+  if (m_clearFiles) {
+    std::remove(m_fileName.c_str());
+    m_fd = ::open(m_fileName.c_str(),  O_RDWR | O_CREAT,
+                  S_IRUSR | S_IWUSR);
+    auto timeString = std::to_string(m_timestampReference);
+    ::pwrite(m_fd, timeString.data(), timeString.size(), 0);
+    fsync(m_fd);
+    std::remove(m_fileName2.c_str());
+    m_fd2 = ::open(m_fileName2.c_str(),  O_RDWR | O_CREAT,
+                  S_IRUSR | S_IWUSR);
+  } else {
+    if ((m_fd = ::open(m_fileName.c_str(), O_RDONLY)) > 0) {
+      off_t fsize;
+      fsize = lseek(m_fd, 0, SEEK_END);
+      auto timeString = std::string(fsize, ' ');
+      ::pread(m_fd, timeString.data(), fsize, 0);
+      m_timestampReference = std::stol(timeString);
+    }
+    if ((m_fd2 = ::open(m_fileName2.c_str(), O_RDWR, S_IRUSR | S_IWUSR)) > 0) {
+      auto fsize = lseek(m_fd2, 0, SEEK_END);
+      auto timeString = std::string(fsize, ' ');
+      ::pread(m_fd2, timeString.data(), fsize, 0);
+      m_lastTimestamp = std::stol(timeString);
+    }
+  }
+}
 
 void LatencyMonitor::disable() { m_active.store(false); }
 
@@ -17,6 +51,7 @@ std::string LatencyMonitor::toString() {
   if (m_count < 2 || !m_active.load())
     return latencyString;
 
+  //const std::chrono::time_point currentTime = std::chrono::high_resolution_clock::now();
   m_avg = m_latency / ((double) m_count);
   std::ostringstream streamObj;
   streamObj << std::fixed;
@@ -24,6 +59,7 @@ std::string LatencyMonitor::toString() {
   streamObj << " [avg " << std::to_string(m_avg);
   streamObj << " min " << std::to_string(m_min);
   streamObj << " max " << std::to_string(m_max);
+  //streamObj << " ts " << std::to_string(currentTime.time_since_epoch().count());
   streamObj << "]";
   latencyString = streamObj.str();
 
@@ -46,13 +82,39 @@ void LatencyMonitor::monitor(QueryBuffer &buffer, long latencyMark) {
   long t2 = (currentTimeNano - m_timestampReference) / 1000L;
   dt = ((double) (t2 - t1)) / 1000.; /* In milliseconds */
 
+  /*if (m_clearFiles) {
+    if (m_restartReference == 0) {
+      m_restartReference = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+      m_remainingTime = dt; //1000;
+    } else {
+      double diff = ((double)(currentTimeNano - m_restartReference) / 1000L) / 1000.;
+      if (diff > m_remainingTime) {
+        m_clearFiles = false;
+      } else {
+        dt = dt + (m_remainingTime - diff);
+      }
+    }
+  }*/
+
   m_measurements.push_back(dt);
+
+  auto latencyString = std::to_string(latencyMark);
+  ::pwrite(m_fd2, latencyString.data(), latencyString.size(), 0);
+  // fsync(m_fd2);
 
   m_latency += dt;
   m_count += 1;
 
   m_min = std::min(dt, m_min);
   m_max = std::max(dt, m_max);
+}
+
+long LatencyMonitor::getTimestampReference() const {
+  return m_timestampReference;
+}
+
+long LatencyMonitor::getLastTimestamp() const {
+  return m_lastTimestamp;
 }
 
 void LatencyMonitor::stop() {
@@ -78,7 +140,7 @@ void LatencyMonitor::stop() {
   std::cout << streamObj.str() << std::endl;
 }
 
-double LatencyMonitor::evaluateSorted(const double p) {
+double LatencyMonitor::evaluateSorted(double p) {
   double n = m_measurements.size();
   double pos = p * (n + 1) / 100;
   double fpos = floor(pos);

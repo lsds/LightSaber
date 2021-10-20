@@ -1,15 +1,22 @@
 #pragma once
 
-#include <vector>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <tbb/concurrent_queue.h>
+#include <tbb/concurrent_vector.h>
+
+#include <boost/circular_buffer.hpp>
 #include <list>
 #include <mutex>
+#include <vector>
 
-#include <tbb/concurrent_vector.h>
-#include <tbb/concurrent_queue.h>
-#include <boost/circular_buffer.hpp>
-
-#include "utils/SystemConf.h"
 #include "utils/PaddedInt.h"
+#include "utils/SystemConf.h"
+
+#if defined(RDMA_OUTPUT)
+#include "RDMA/infinity/infinity.h"
+#include "buffers/RDMABufferPool.h"
+#endif
 
 class QueryBuffer;
 class PartialWindowResults;
@@ -20,6 +27,8 @@ class AggregateOperatorCode;
 struct PartialResultSlotWithoutFragments;
 struct PartialResultSlot;
 struct PartialWindowResultSlot;
+class FileBackedCheckpointCoordinator;
+struct LineageGraph;
 
 /*
  * \brief This class handles the result phase of both stateless and stateful
@@ -42,14 +51,15 @@ struct PartialWindowResultSlot;
 class ResultHandler {
  private:
   Query &m_query;
-  QueryBuffer &m_freeBuffer;
+  QueryBuffer &m_freeBuffer1, &m_freeBuffer2;
   bool m_hasWindowFragments;
   bool m_useParallelMerge;
+  std::atomic<int> m_maxTaskId;
   std::mutex m_forwardLock; /* Protects nextToForward */
   std::atomic<int> m_nextToForward;
   std::atomic<int> m_nextWindowToForward;
   std::mutex m_mergeLock;   /* Protects nextToAggregate */
-  std::mutex m_prepareMergeLock;   /* Protects merge preparation */
+  std::mutex m_prepareMergeLock;   /* Protects nextToAggregate */
   std::atomic<int> m_nextToAggregate;
   AggregateOperatorCode *m_aggrOperator;
   long m_totalOutputBytes;
@@ -69,6 +79,15 @@ class ResultHandler {
   int m_insertedWindows = 0;
   int m_forwardedWindows = 0;
 
+  size_t m_forwardId = 0;
+
+  bool m_stopMerging = false;
+
+  bool m_hasRestored = false;
+
+  std::shared_ptr<LineageGraph> m_graph = nullptr;
+  std::shared_ptr<LineageGraph> m_checkpointGraph = nullptr;
+
   /*
    * Flags:
    *  -1: slot is free
@@ -85,16 +104,40 @@ class ResultHandler {
   std::vector<PartialWindowResultSlot> m_windowResults;
   boost::circular_buffer<int> m_openingWindowsList;
 
+  // Variables for sending data to a sink over TCP
+  int m_sock = 0;
+  const bool m_compressOutput = false;
+  std::vector<ByteBuffer> m_compressBuffers;
+
+#if defined(RDMA_OUTPUT)
+  infinity::core::Context *m_context;
+  infinity::queues::QueuePairFactory *m_qpFactory;
+  infinity::queues::QueuePair *m_qp;
+  infinity::memory::Buffer *m_sendBuffer, *m_receiveBuffer;
+#endif
+
   inline void forwardAndFreeWithoutFrags(WindowBatch *batch);
   inline void aggregateAndForwardAndFree(WindowBatch *batch);
   inline void aggregateWindowsAndForwardAndFree(WindowBatch *batch);
 
+  inline void debugAggregateAndForwardAndFree();
+  inline void updateMaximumTaskId(int value);
+
+  friend class FileBackedCheckpointCoordinator;
+
  public:
-  ResultHandler(Query &query, QueryBuffer &freeBuffer, bool hasWindowFragments, bool useParallelMerge = false);
+  ResultHandler(Query &query, QueryBuffer &freeBuffer1, QueryBuffer &freeBuffer2, bool hasWindowFragments, bool useParallelMerge = false);
+  void setupSocket();
   long getTotalOutputBytes();
   void incTotalOutputBytes(int bytes);
   void forwardAndFree(WindowBatch *batch);
   void setAggregateOperator(AggregateOperatorCode *aggrOperator);
   bool containsFragmentedWindows();
+  void restorePtrs(int taskId);
   virtual ~ResultHandler();
+
+  // Used only for testing
+  std::vector<PartialResultSlotWithoutFragments> &getPartialsWithoutFrags();
+  std::vector<PartialResultSlot> &getPartials();
+  std::vector<PartialWindowResultSlot> &getWindowPartials();
 };

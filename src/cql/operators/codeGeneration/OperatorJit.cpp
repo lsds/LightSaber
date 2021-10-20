@@ -1,5 +1,11 @@
 #include "OperatorJit.h"
 
+#include <llvm/Analysis/TargetLibraryInfo.h>
+#include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/IRReader/IRReader.h>
+
+#include <fstream>
+
 #include "clang/Driver/Compilation.h"
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/Tool.h"
@@ -7,11 +13,9 @@
 #include "clang/Frontend/CompilerInvocation.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/TextDiagnosticPrinter.h"
-
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
-#include <llvm/Analysis/TargetLibraryInfo.h>
-#include <llvm/Analysis/TargetTransformInfo.h>
+#include "llvm/Object/ObjectFile.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
 #include "llvm/ExecutionEngine/JITSymbol.h"
 #include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
@@ -30,9 +34,9 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Scalar/GVN.h"
 //#include "llvm/Transforms/Vectorize.h"
@@ -54,19 +58,20 @@ namespace llvm {
 namespace orc {
 OperatorJit::OperatorJit()
     : Resolver(createLegacyLookupResolver(
-    ES,
-    [this](const std::string &Name) -> JITSymbol {
-      if (auto Sym = OptimizeLayer.findSymbol(Name, false))
-        return Sym;
-      else if (auto Err = Sym.takeError())
-        return std::move(Err);
-      if (auto SymAddr =
-          RTDyldMemoryManager::getSymbolAddressInProcess(Name))
-        return JITSymbol(SymAddr, JITSymbolFlags::Exported);
-      return nullptr;
-    },
-    [](Error Err) { cantFail(std::move(Err), "lookupFlags failed"); })),
-      TM(EngineBuilder().selectTarget()), DL(TM->createDataLayout()),
+          ES,
+          [this](const std::string &Name) -> JITSymbol {
+            if (auto Sym = OptimizeLayer.findSymbol(Name, false))
+              return Sym;
+            else if (auto Err = Sym.takeError())
+              return std::move(Err);
+            if (auto SymAddr =
+                    RTDyldMemoryManager::getSymbolAddressInProcess(Name))
+              return JITSymbol(SymAddr, JITSymbolFlags::Exported);
+            return nullptr;
+          },
+          [](Error Err) { cantFail(std::move(Err), "lookupFlags failed"); })),
+      TM(EngineBuilder().selectTarget()),
+      DL(TM->createDataLayout()),
       ObjectLayer(ES,
                   [this](VModuleKey) {
                     return LegacyRTDyldObjectLinkingLayer::Resources{
@@ -85,6 +90,18 @@ VModuleKey OperatorJit::addModule(std::unique_ptr<Module> M) {
   // Add the module to the JIT with a new VModuleKey.
   auto K = ES.allocateVModule();
   cantFail(OptimizeLayer.addModule(K, std::move(M)));
+  keys.push_back(K);
+  return K;
+}
+
+VModuleKey OperatorJit::addObjectFile(object::OwningBinary<object::ObjectFile> O) {
+  // Add the module to the JIT with a new VModuleKey.
+  objectFile = std::move(O);
+  auto K = ES.allocateVModule();
+  std::unique_ptr<MemoryBuffer> mb =
+      MemoryBuffer::getMemBuffer(objectFile.getBinary()->getMemoryBufferRef());
+      //MemoryBuffer::getMemBufferCopy(O->getMemoryBufferRef().getBuffer());
+  cantFail(ObjectLayer.addObject(K, std::move(mb)));
   keys.push_back(K);
   return K;
 }
@@ -108,8 +125,7 @@ JITTargetAddress OperatorJit::getSymbolAddress(const StringRef &Name) {
 }
 
 void OperatorJit::removeAllModules() {
-  for (auto m : keys)
-    removeModule(m);
+  for (auto m : keys) removeModule(m);
   keys.clear();
 }
 
@@ -118,6 +134,7 @@ void OperatorJit::removeModule(VModuleKey K) {
 }
 
 std::unique_ptr<Module> OperatorJit::optimizeModule(std::unique_ptr<Module> M) {
+  if (!useOptimizationPasses) return M;
 
   // Optimize the emitted LLVM IR.
   Timer topt;
@@ -144,7 +161,8 @@ std::unique_ptr<Module> OperatorJit::optimizeModule(std::unique_ptr<Module> M) {
   auto FPM = llvm::make_unique<legacy::FunctionPassManager>(M.get());
 
   // Add some optimizations.
-  FPM->add(llvm::createTargetTransformInfoWrapperPass(TM->getTargetIRAnalysis()));
+  FPM->add(
+      llvm::createTargetTransformInfoWrapperPass(TM->getTargetIRAnalysis()));
 
   FPM->add(createInstructionCombiningPass());
   FPM->add(createReassociatePass());
@@ -163,7 +181,7 @@ std::unique_ptr<Module> OperatorJit::optimizeModule(std::unique_ptr<Module> M) {
   PM_BuilderP->populateFunctionPassManager(*FPM);
   PM_BuilderP->populateModulePassManager(*PMP);
   PM_BuilderP->populateLTOPassManager(*PMP);
-  //PM_BuilderP->populateThinLTOPassManager(*PMP);
+  // PM_BuilderP->populateThinLTOPassManager(*PMP);
 
   PMP->add(createVerifierPass());
   PMP->add(createGlobalOptimizerPass());
@@ -171,41 +189,70 @@ std::unique_ptr<Module> OperatorJit::optimizeModule(std::unique_ptr<Module> M) {
   // Run the optimizations over all functions in the module being added to
   // the JIT.
   FPM->doInitialization();
-  for (auto &F : *M)
-    FPM->run(F);
+  for (auto &F : *M) FPM->run(F);
   FPM->doFinalization();
 
   // Finally run the module passes
   PMP->run(*M);
 
-  //if (verbose) {
+  // if (verbose) {
   topt.stopTimer();
-  //std::cout << "[Optimization elapsed:] " << topt.getTotalTime().getProcessTime() << "s\n";
-  //    const char* post_opt_file = "/tmp/llvmjit-post-opt.ll";
-  //    llvm_module_to_file(*M, post_opt_file);
-  //    std::cout << "[Post optimization module] dumped to " << post_opt_file
-  //              << "\n";
+  // std::cout << "[Optimization elapsed:] " <<
+  // topt.getTotalTime().getProcessTime() << "s\n";
+  if (!llPath.empty()) {
+    const char *post_opt_file = llPath.c_str();  //"/tmp/llvmjit-post-opt.ll";
+    llvm_module_to_file(*M, post_opt_file);
+    std::cout << "[Post optimization module] dumped to " << post_opt_file << "\n";
+  }
+  if (!oPath.empty()) {
+    // https://stackoverflow.com/questions/62311918/llvm-c-creating-object-file-results-in-targetmachine-cant-emit-a-file-of-this
+    char* errors = 0;
+    char *object_file = const_cast<char *>(oPath.c_str());
+    LLVMTargetMachineEmitToFile(reinterpret_cast<LLVMTargetMachineRef>(const_cast<TargetMachine *>(TM.get())),
+                                (LLVMModuleRef)M.get(),
+                                object_file, LLVMObjectFile, &errors);
+    printf("error: %s\n", errors);
+    LLVMDisposeErrorMessage(errors);
+    std::cout << "[Post optimization module] dumped to " << object_file << "\n";
+  }
   //}
-  //M->dump();
+  // M->dump();
   return M;
 }
+
+void OperatorJit::llvm_module_to_file(const llvm::Module &module,
+                                      const char *filename) {
+  std::string str;
+  llvm::raw_string_ostream os(str);
+  module.print(os, nullptr);
+
+  std::ofstream of(filename);
+  of << os.str();
 }
-}
+}  // namespace orc
+}  // namespace llvm
 
 using namespace clang;
 using namespace clang::driver;
 
-CodeGenWrapper::CodeGenWrapper() {
-}
+CodeGenWrapper::CodeGenWrapper() {}
 
-uint64_t CodeGenWrapper::parseAndCodeGen(int argc, const char **argv) {
-
+uint64_t CodeGenWrapper::parseAndCodeGen(int argc, const char **argv,
+                                         bool fileExists) {
   // give the path of the file...
-  //argv[1] = "/home/george/clion/workspace/llvm_test/cmake-build-debug/dummy.cpp";
+  // argv[1] =
+  // "/home/george/clion/workspace/llvm_test/cmake-build-debug/dummy.cpp";
+  auto llPath = std::string(argv[1]);
+  std::string toReplace(".cpp");
+  size_t pos = llPath.find(toReplace);
+  llPath.replace(pos, toReplace.length(), ".ll");
+  auto oPath = std::string(argv[1]);
+  pos = oPath.find(toReplace);
+  oPath.replace(pos, toReplace.length(), ".o");
 
   // This just needs to be some symbol in the binary; C++ doesn't
   // allow taking the address of ::main however.
-  void *MainAddr = (void *) (intptr_t) GetExecutablePath;
+  void *MainAddr = (void *)(intptr_t)GetExecutablePath;
   std::string Path = GetExecutablePath(argv[0], MainAddr);
   IntrusiveRefCntPtr<DiagnosticOptions> DiagOpts = new DiagnosticOptions();
   TextDiagnosticPrinter *DiagClient =
@@ -219,8 +266,7 @@ uint64_t CodeGenWrapper::parseAndCodeGen(int argc, const char **argv) {
 
   // Use ELF on Windows-32 and MingW for now.
 #ifndef CLANG_INTERPRETER_COFF_FORMAT
-  if (T.isOSBinFormatCOFF())
-    T.setObjectFormat(llvm::Triple::ELF);
+  if (T.isOSBinFormatCOFF()) T.setObjectFormat(llvm::Triple::ELF);
 #endif
 
   Driver TheDriver(Path, T.str(), Diags);
@@ -231,14 +277,12 @@ uint64_t CodeGenWrapper::parseAndCodeGen(int argc, const char **argv) {
   // recognize. We need to extend the driver library to support this use model
   // (basically, exactly one input, and the operation mode is hard wired).
   SmallVector<const char *, 16> Args(argv, argv + argc);
-  //Args.push_back("-fsyntax-only");
+  // Args.push_back("-fsyntax-only");
   std::string cpp = "JITFromSource.cpp";
   populateArgs(Args, cpp);
 
   std::unique_ptr<Compilation> C(TheDriver.BuildCompilation(Args));
-  if (!C)
-    return 1;
-
+  if (!C) return 1;
   // FIXME: This is copied from ASTUnit.cpp; simplify and eliminate.
 
   // We expect to get back exactly one command job, if we didn't something
@@ -261,11 +305,9 @@ uint64_t CodeGenWrapper::parseAndCodeGen(int argc, const char **argv) {
   // Initialize a compiler invocation object from the clang (-cc1) arguments.
   const llvm::opt::ArgStringList &CCArgs = Cmd.getArguments();
   std::unique_ptr<CompilerInvocation> CI(new CompilerInvocation);
-  CompilerInvocation::CreateFromArgs(*CI,
-                                     const_cast<const char **>(CCArgs.data()),
-                                     const_cast<const char **>(CCArgs.data()) +
-                                         CCArgs.size(),
-                                     Diags);
+  CompilerInvocation::CreateFromArgs(
+      *CI, const_cast<const char **>(CCArgs.data()),
+      const_cast<const char **>(CCArgs.data()) + CCArgs.size(), Diags);
 
   // Show the invocation, with -v.
   if (CI->getHeaderSearchOpts().Verbose) {
@@ -282,8 +324,7 @@ uint64_t CodeGenWrapper::parseAndCodeGen(int argc, const char **argv) {
 
   // Create the compilers actual diagnostics engine.
   Clang.createDiagnostics();
-  if (!Clang.hasDiagnostics())
-    return 1;
+  if (!Clang.hasDiagnostics()) return 1;
 
   // Infer the builtin include path if unspecified.
   if (Clang.getHeaderSearchOpts().UseBuiltinIncludes &&
@@ -291,23 +332,45 @@ uint64_t CodeGenWrapper::parseAndCodeGen(int argc, const char **argv) {
     Clang.getHeaderSearchOpts().ResourceDir =
         CompilerInvocation::GetResourcesPath(argv[0], MainAddr);
 
-  // Create and execute the frontend to generate an LLVM bitcode module.
+  std::unique_ptr<llvm::Module> Module;
   std::unique_ptr<CodeGenAction> Act(new EmitLLVMOnlyAction());
-  if (!Clang.ExecuteAction(*Act))
-    return 1;
+  // Create and execute the frontend to generate an LLVM bitcode module.
+  if (!fileExists) {
+    if (!Clang.ExecuteAction(*Act)) return 1;
+    Module = Act->takeModule();
+  } else {
+    if (!useObjectFile) {
+      Module = llvm::parseIRFile(StringRef(llPath), error, context);
+      useOptimizationPasses = false;
+    } else {
+      auto obj = llvm::object::ObjectFile::createObjectFile(oPath);
+      if (!obj) {
+        std::cout << "Failed to load " << oPath << std::endl;
+        exit(1);
+      }
+      llvm::InitializeNativeTarget();
+      llvm::InitializeNativeTargetAsmPrinter();
+      // LLVMLinkInMCJIT();
+      J = new llvm::orc::OperatorJit;
+      auto moduleKey = J->addObjectFile(std::move(obj.get()));
+      return moduleKey;
+    }
+  }
 
   llvm::InitializeNativeTarget();
   llvm::InitializeNativeTargetAsmPrinter();
-  //LLVMLinkInMCJIT();
+  // LLVMLinkInMCJIT();
 
-  std::unique_ptr<llvm::Module> Module = Act->takeModule();
+  // std::unique_ptr<llvm::Module> Module = Act->takeModule();
   llvm::orc::VModuleKey moduleKey = 0;
-  //Module->dump();
+  // Module->dump();
   if (Module) {
     J = new llvm::orc::OperatorJit;
+    J->llPath = llPath;
+    if (useObjectFile)
+      J->oPath = oPath;
     moduleKey = J->addModule(std::move(Module));
   }
-
   return moduleKey;
 }
 
@@ -323,50 +386,58 @@ CodeGenWrapper::~CodeGenWrapper() {
   llvm::llvm_shutdown();
 }
 
-void CodeGenWrapper::populateArgs(SmallVector<const char *, 16> &args, llvm::StringRef cpp) {
+void CodeGenWrapper::populateArgs(SmallVector<const char *, 16> &args,
+                                  llvm::StringRef cpp) {
+  // args.push_back("-g");
+  // args.push_back("-ccc-print-phases");
+  // args.push_back("-v");
+  // args.push_back("-march=native");
+  // args.push_back("-stdlib=libc++");
 
-  //args.push_back("-g");
-  //args.push_back("-ccc-print-phases");
-  //args.push_back("-v");
-  //args.push_back("-march=native");
-  //args.push_back("-stdlib=libc++");
-
+  //args.push_back("--gcc-toolchain=/usr/local/gcc/7.5.0");
   args.push_back("-emit-llvm");
   args.push_back("-emit-llvm-bc");
   args.push_back("-emit-llvm-uselists");
 
-  //args.push_back("-main-file-name");
-  //args.push_back(cpp.data());
+  // args.push_back("-main-file-name");
+  // args.push_back(cpp.data());
 
   args.push_back("-mavx2");
   args.push_back("-std=c++14");
+
+  // error: unknown argument
+  // args.push_back("-frename-registers");
+  // args.push_back("-fdeprecated-macro");
+  // args.push_back("-mrelocation-model");
+  // args.push_back("-mconstructor-aliases");
+  // args.push_back("-munwind-tables");
+  // args.push_back("-masm-verbose");
+
+  // if (!useOptimizationPasses) {
   args.push_back("-disable-free");
-  args.push_back("-fdeprecated-macro");
   args.push_back("-fmath-errno");
   args.push_back("-fuse-init-array");
-
-  args.push_back("-mrelocation-model");
+  args.push_back("-funroll-loops");
   args.push_back("static");
   args.push_back("-mthread-model");
   args.push_back("posix");
-  args.push_back("-masm-verbose");
-  args.push_back("-mconstructor-aliases");
-  args.push_back("-munwind-tables");
-
   args.push_back("-dwarf-column-info");
   args.push_back("-debugger-tuning=gdb");
+  //}
 
 #if DEBUG
   args.push_back("-debug-info-kind=limited");
   args.push_back("-dwarf-version=4");
 #else
   args.push_back("-O3");
-  args.push_back("-mdisable-fp-elim");
   args.push_back("-momit-leaf-frame-pointer");
-  //args.push_back("-vectorize-loops");
+  // args.push_back("-vectorize-loops");
   args.push_back("-loop-vectorize");
-  //args.push_back("-vectorize-slp");
-  args.push_back("-slp-vectorizer");
+  // args.push_back("-vectorize-slp");
+
+  // error: unknown argument
+  // args.push_back("-mdisable-fp-elim");
+  // args.push_back("-slp-vectorizer");
 #endif
 
   args.push_back("-resource-dir");
@@ -385,24 +456,21 @@ void CodeGenWrapper::populateArgs(SmallVector<const char *, 16> &args, llvm::Str
   */
   args.push_back("-internal-isystem");
   args.push_back(STRINGIFY(OPERATOR_JIT_LIB_CLANG_RESOURCE_DIR) "/include");
-  //args.push_back("-internal-isystem " STRINGIFY(OPERATOR_JIT_LIB_CLANG_RESOURCE_DIR) "/include");
+  // args.push_back("-internal-isystem "
+  // STRINGIFY(OPERATOR_JIT_LIB_CLANG_RESOURCE_DIR) "/include");
 
-  /*
-  "-internal-externc-isystem"
+  /* "-internal-externc-isystem"
   "/usr/include/x86_64-linux-gnu"
   "-internal-externc-isystem"
   "/include"
   "-internal-externc-isystem"
-  "/usr/include"
-  */
-  /*
-  std::string bc = replaceExtension (cpp, "bc");
+  "/usr/include" */
+  /* std::string bc = replaceExtension (cpp, "bc");
   args.push_back("-o");
   args.push_back(bc.data());
   args.push_back("-x");
   args.push_back("c++");
   args.push_back(cpp.data());*/
 
-  // args.push_back("opt -O3");
   args.push_back("-flto");
 }

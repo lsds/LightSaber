@@ -59,10 +59,11 @@ class SG1 : public SmartGrid {
   }
 
  public:
-  SG1(bool inMemory = true) {
+  SG1(bool inMemory = true, bool startApp = true) {
     m_name = "SG1";
     createSchema();
-    createApplication();
+    if (startApp)
+      createApplication();
     if (inMemory)
       loadInMemoryData();
   }

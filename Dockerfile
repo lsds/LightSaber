@@ -1,5 +1,8 @@
 FROM ubuntu:bionic
 
+ENV TZ=Etc/UTC
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 RUN apt update && \
     apt upgrade -y && \
 		apt install -y \
@@ -10,7 +13,8 @@ RUN apt update && \
 		build-essential \
 		ccache \
 		flex \
-		g++ \
+		gcc  \
+		g++  \
 		git \
 		libboost-all-dev \
 		libbz2-dev \
@@ -33,7 +37,12 @@ RUN apt update && \
 		pkg-config \
 		python-dev \
 		zlib1g-dev \
-		wget
+		wget \
+		libaio-dev \
+		libibverbs-dev \
+		bpfcc-tools \
+		sysstat \
+		fio
 
 RUN cd && \
     apt remove --purge --auto-remove cmake && \
@@ -87,6 +96,80 @@ ENV PATH=$LLVM_HOME/bin:$PATH
 ENV LIBRARY_PATH=$LLVM_HOME/lib:$LIBRARY_PATH
 ENV LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$LIBRARY_PATH
 ENV PATH=/usr/lib/ccache:$PATH
+
+RUN cd && \
+    apt install -y \
+    git  \
+    gcc  \
+    g++  \
+    autoconf  \
+    automake  \
+    asciidoc  \
+    asciidoctor  \
+    bash-completion  \
+    xmlto  \
+    libtool  \
+    pkg-config  \
+    libglib2.0-0  \
+    libglib2.0-dev  \
+    libfabric1  \
+    libfabric-dev  \
+    doxygen  \
+    graphviz  \
+    pandoc  \
+    libncurses5  \
+    libkmod2  \
+    libkmod-dev  \
+    libudev-dev  \
+    uuid-dev  \
+    libjson-c-dev  \
+    libkeyutils-dev \
+    systemd \
+    libsystemd-dev
+
+RUN cd && \
+    git clone https://github.com/pmem/ndctl && \
+    cd ndctl && \
+    git checkout c7767834871f7ce50a2abe1da946e9e16fb08eda && \
+    ./autogen.sh && \
+    ./configure CFLAGS='-g -O2' --prefix=/usr/local --sysconfdir=/etc --libdir=/usr/local/lib64 && \
+    make -j$(nproc) && \
+    make install
+
+RUN cd && \
+    apt install -y \
+    autoconf  \
+    automake  \
+    pkg-config  \
+    libglib2.0-dev  \
+    libfabric-dev  \
+    pandoc  \
+    libncurses5-dev
+
+RUN cd && \
+    git clone https://github.com/pmem/pmdk && \
+    cd pmdk && \
+    git checkout 3bc5b0da5a7a5d5752ad2cb4f5f9bf0edfd47d67 && \
+    export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH} && \
+    make -j$(nproc) && \
+    PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH} make install && \
+    echo /usr/local/lib >> /etc/ld.so.conf && \
+    echo /usr/local/lib64 >> /etc/ld.so.conf && \
+    ldconfig
+#    echo 'export PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}' >> $HOME/.profile && \
+#    source $HOME/.profile
+
+ENV PKG_CONFIG_PATH=/usr/local/lib64/pkgconfig:/usr/local/lib/pkgconfig:${PKG_CONFIG_PATH}
+
+RUN cd && \
+    git clone https://github.com/pmem/libpmemobj-cpp.git && \
+    cd libpmemobj-cpp && \
+    git checkout 9f784bba07b94cd36c9eebeaa88c5df4f05045b2 && \
+    mkdir build && \
+    cd build && \
+    cmake -DTESTS_USE_VALGRIND=OFF .. && \
+    make -j$(nproc) && \
+    make install
 
 RUN cd && \
     git clone https://github.com/lsds/LightSaber.git && \

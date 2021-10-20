@@ -18,6 +18,7 @@ class TupleSchema {
   int m_size;
   bool m_hasTimestamp;
   int m_tupleSize;
+  int m_padLength = -1;
 
  public:
 
@@ -80,5 +81,19 @@ class TupleSchema {
       /*tupleSize = Utils::getPowerOfTwo(tupleSize);*/
     }
     return m_tupleSize;
+  }
+
+  int getPadLength() {
+    if (m_padLength == -1) {
+      auto tupleSize = getTupleSize();
+      m_padLength = 0;
+      // Expand size, if needed, to ensure that tuple size is a power of 2
+      if ((tupleSize & (tupleSize - 1)) != 0) {
+        auto pow2Size = 1;
+        while (tupleSize > pow2Size) pow2Size *= 2;
+        m_padLength = pow2Size - tupleSize;
+      }
+    }
+    return m_padLength;
   }
 };

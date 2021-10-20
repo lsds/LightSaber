@@ -38,7 +38,7 @@ class TestSelection : public RandomDataGenerator {
     std::vector<std::shared_ptr<Query>> queries(1);
     queries[0] = std::make_shared<Query>(0, operators, *window, m_schema, timestampReference, false, false, true);
 
-    m_application = new QueryApplication(queries);
+    m_application = new QueryApplication(queries, SystemConf::getInstance().CHECKPOINT_ON);
     m_application->setup();
   }
 
@@ -53,11 +53,11 @@ class TestSelection : public RandomDataGenerator {
 };
 
 int main(int argc, const char **argv) {
-  BenchmarkQuery *benchmarkQuery = nullptr;
+  std::unique_ptr<BenchmarkQuery> benchmarkQuery {};
 
   BenchmarkQuery::parseCommandLineArguments(argc, argv);
 
-  benchmarkQuery = new TestSelection();
+  benchmarkQuery = std::make_unique<TestSelection>();
 
   return benchmarkQuery->runBenchmark();
 }

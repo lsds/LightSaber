@@ -65,10 +65,11 @@ class CM1 : public ClusterMonitoring {
   }
 
  public:
-  CM1(bool inMemory = true) {
+  CM1(bool inMemory = true, bool startApp = true) {
     m_name = "CM1";
     createSchema();
-    createApplication();
+    if (startApp)
+      createApplication();
     if (inMemory)
       loadInMemoryData();
   }
